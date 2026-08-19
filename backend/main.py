@@ -90,6 +90,8 @@ async def simulation_background_loop():
 async def startup_event():
     asyncio.create_task(simulation_background_loop())
 
+@app.get("/")
+@app.get("/health")
 @app.get("/api/health")
 def health_check():
     return {
@@ -100,6 +102,11 @@ def health_check():
         "active_agents": len(sim_engine.agents),
         "timestamp": time.time()
     }
+
+@app.post("/api/v1/auth/login")
+@app.post("/api/auth/login")
+def auth_login():
+    return {"access_token": "crowdsafe-dev-token", "token_type": "bearer", "status": "success"}
 
 # ================= VENUE TEMPLATES & BLUEPRINTS =================
 @app.get("/api/templates")
