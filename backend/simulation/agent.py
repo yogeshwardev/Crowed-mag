@@ -304,8 +304,8 @@ class SimulationAgent:
             # 3.2 Seated Spectator Activity (Get up to buy food/drinks, then return)
             elif self.assigned_role == "SEATED":
                 if self.activity_timer <= 0:
-                    self.activity_timer = random.uniform(20.0, 60.0)
-                    if self.activity_state == "IDLE" and random.random() < 0.35 and amenities:
+                    self.activity_timer = random.uniform(6.0, 16.0)
+                    if self.activity_state == "IDLE" and random.random() < 0.65 and amenities:
                         # Walk to a concession booth or restroom
                         am = random.choice(amenities)
                         self.activity_state = "TO_CONCESSION"
@@ -339,7 +339,7 @@ class SimulationAgent:
                 dist_to_goal = math.hypot(self.target_x - self.x, self.target_y - self.y)
 
                 if dist_to_goal < 2.5 or self.wander_timer <= 0:
-                    self.wander_timer = random.uniform(6.0, 16.0)
+                    self.wander_timer = random.uniform(4.0, 10.0)
                     # Pick a new point along concourses or amenities
                     for _ in range(5):
                         new_tx = random.uniform(10.0, nav_mesh.width - 10.0)

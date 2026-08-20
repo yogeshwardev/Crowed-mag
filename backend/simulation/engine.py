@@ -118,10 +118,10 @@ class SimulationEngine:
         entries = [el for el in self.blueprint_elements if el.get("type") in ["entry_gate", "security", "ticket_counter"]]
         amenities = [el for el in self.blueprint_elements if el.get("type") in ["food_stall", "restroom", "vip_area"]]
 
-        # Calculate proportions
-        seated_count = int(count * 0.45) if seating_areas else 0
-        queue_count = int(count * 0.20) if entries else 0
-        amenity_count = int(count * 0.15) if amenities else 0
+        # Calculate proportions for high dynamic venue activity
+        seated_count = int(count * 0.20) if seating_areas else 0
+        queue_count = int(count * 0.25) if entries else 0
+        amenity_count = int(count * 0.20) if amenities else 0
 
         agent_id = 1
 

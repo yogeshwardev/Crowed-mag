@@ -199,9 +199,17 @@ export function createSimulationWebSocket(onMessage: (data: any) => void) {
   connect();
 
   return {
-    send(action: string, payload: any = {}) {
+    send(actionOrRaw: any, payload: any = {}) {
       if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ action, ...payload }));
+        if (typeof actionOrRaw === 'string') {
+          if (actionOrRaw.trim().startsWith('{')) {
+            ws.send(actionOrRaw);
+          } else {
+            ws.send(JSON.stringify({ action: actionOrRaw, ...payload }));
+          }
+        } else if (typeof actionOrRaw === 'object') {
+          ws.send(JSON.stringify(actionOrRaw));
+        }
       }
     },
     close() {

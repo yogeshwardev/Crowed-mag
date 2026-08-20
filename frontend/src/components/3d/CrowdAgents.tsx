@@ -122,16 +122,20 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
         kinematicCache.current.set(a.id, cached);
       }
 
-      // Smooth positional interpolation with velocity extrapolation
-      const lerpFactor = Math.min(1.0, delta * 14.0);
-      cached.x = THREE.MathUtils.lerp(cached.x, a.x, lerpFactor);
-      cached.y = THREE.MathUtils.lerp(cached.y, a.y, lerpFactor);
-
       // Smooth velocity
       const targetVx = a.vx !== undefined ? a.vx : (a.target_x - a.x);
       const targetVy = a.vy !== undefined ? a.vy : (a.target_y - a.y);
-      cached.vx = THREE.MathUtils.lerp(cached.vx, targetVx, Math.min(1.0, delta * 10.0));
-      cached.vy = THREE.MathUtils.lerp(cached.vy, targetVy, Math.min(1.0, delta * 10.0));
+      cached.vx = THREE.MathUtils.lerp(cached.vx, targetVx, Math.min(1.0, delta * 12.0));
+      cached.vy = THREE.MathUtils.lerp(cached.vy, targetVy, Math.min(1.0, delta * 12.0));
+
+      // Continuous 60 FPS velocity extrapolation between server ticks
+      cached.x += cached.vx * delta;
+      cached.y += cached.vy * delta;
+
+      // Smoothly pull towards authoritative server coordinate
+      const lerpFactor = Math.min(1.0, delta * 12.0);
+      cached.x = THREE.MathUtils.lerp(cached.x, a.x, lerpFactor);
+      cached.y = THREE.MathUtils.lerp(cached.y, a.y, lerpFactor);
 
       const actualSpeed = Math.hypot(cached.vx, cached.vy);
       cached.speed = actualSpeed;
