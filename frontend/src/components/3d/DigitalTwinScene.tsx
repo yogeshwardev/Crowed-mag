@@ -103,9 +103,10 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
           orbitControlsRef={orbitControlsRef}
         />
 
-        {/* Orbit Controls */}
+        {/* Orbit Controls (disabled while aiming fire to prevent camera drag intercepting clicks) */}
         <OrbitControls
           ref={orbitControlsRef}
+          enabled={!isPlacingFire}
           enableDamping
           dampingFactor={0.05}
           maxPolarAngle={Math.PI / 2.05} // Prevent going below ground
@@ -128,7 +129,7 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
         {/* Interactive 3D Raycasting Ground Plane for Fire Ignition */}
         <mesh
           rotation={[-Math.PI / 2, 0, 0]}
-          position={[0, 0.03, 0]}
+          position={[0, isPlacingFire ? 0.35 : -0.5, 0]}
           onPointerMove={(e) => {
             if (isPlacingFire && e.point) {
               setFireCursor({ x: e.point.x, z: e.point.z });
@@ -148,8 +149,8 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
             }
           }}
         >
-          <planeGeometry args={[blueprint.width + 40, blueprint.length + 40]} />
-          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          <planeGeometry args={[blueprint.width + 120, blueprint.length + 120]} />
+          <meshBasicMaterial transparent opacity={0.001} depthWrite={false} side={THREE.DoubleSide} />
         </mesh>
 
         {/* Holographic 3D Fire Placement Target Reticle */}
@@ -214,8 +215,20 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
             🔥 CLICK ANYWHERE ON THE 3D MAP TO IGNITE FIRE
           </span>
           <button
+            onClick={() => {
+              if (onTriggerFire) {
+                onTriggerFire(blueprint.width / 2, blueprint.length / 2);
+              }
+              setIsPlacingFire(false);
+              setFireCursor(null);
+            }}
+            className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-extrabold rounded-lg ml-2 shadow"
+          >
+            ⚡ Quick Ignite at Center
+          </button>
+          <button
             onClick={() => { setIsPlacingFire(false); setFireCursor(null); }}
-            className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold rounded-lg ml-2"
+            className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold rounded-lg ml-1"
           >
             Cancel
           </button>

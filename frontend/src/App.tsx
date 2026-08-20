@@ -117,6 +117,30 @@ export const App: React.FC = () => {
 
   // Emergency triggers
   const handleTriggerFire = async (x: number, y: number) => {
+    // 1. Instant optimistic local state update for zero-latency UI reaction
+    if (telemetry) {
+      setTelemetry({
+        ...telemetry,
+        is_emergency: true,
+        emergency_scenario: 'fire',
+        danger_zones: [{ x, y, radius: 15.0 }]
+      });
+    }
+
+    // 2. Send via WebSocket if active
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      try {
+        socketRef.current.send(JSON.stringify({
+          action: 'EMERGENCY_TRIGGER',
+          scenario: 'fire',
+          x,
+          y,
+          radius: 15.0
+        }));
+      } catch (e) {}
+    }
+
+    // 3. Send via REST API
     try {
       await api.triggerEmergency({
         scenario_type: 'fire',
@@ -125,15 +149,7 @@ export const App: React.FC = () => {
         radius: 15.0
       });
     } catch (err) {
-      // Local fallback emergency state
-      if (telemetry) {
-        setTelemetry({
-          ...telemetry,
-          is_emergency: true,
-          emergency_scenario: 'fire',
-          danger_zones: [{ x, y, radius: 15.0 }]
-        });
-      }
+      console.warn('Emergency triggered via local/WebSocket stream', err);
     }
   };
 
