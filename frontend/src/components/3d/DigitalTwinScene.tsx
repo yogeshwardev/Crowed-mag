@@ -174,13 +174,15 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
           </group>
         )}
 
-        {/* Instanced Low-Poly Human Crowd */}
+        {/* Instanced Low-Poly Human Crowd with Autonomous 60 FPS Steering Physics */}
         {overlayMode !== 'heatmap' && (
           <CrowdAgents
             agents={agents}
             venueWidth={blueprint.width}
             venueLength={blueprint.length}
             isEmergency={isEmergency}
+            dangerZones={dangerZones}
+            elements={blueprint.elements}
           />
         )}
 

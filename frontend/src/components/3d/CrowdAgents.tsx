@@ -1,13 +1,15 @@
 import React, { useRef, useMemo } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
-import { AgentData } from '../../types';
+import { AgentData, BlueprintElement } from '../../types';
 
 interface CrowdAgentsProps {
   agents: AgentData[];
   venueWidth: number;
   venueLength: number;
   isEmergency: boolean;
+  dangerZones?: Array<{ x: number; y: number; radius: number }>;
+  elements?: BlueprintElement[];
 }
 
 const CLOTHING_COLORS = [
@@ -36,6 +38,8 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
   venueWidth,
   venueLength,
   isEmergency,
+  dangerZones = [],
+  elements = [],
 }) => {
   const torsoMeshRef = useRef<THREE.InstancedMesh>(null);
   const headMeshRef = useRef<THREE.InstancedMesh>(null);
@@ -50,16 +54,40 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const maxInstances = 3000;
 
-  // Real-time kinematic state cache for smooth 60 FPS organic motion
+  // Real-time kinematic state cache for smooth 60 FPS autonomous organic motion
   const kinematicCache = useRef<Map<number, {
     x: number;
     y: number;
     vx: number;
     vy: number;
+    targetX: number;
+    targetY: number;
     angle: number;
     stridePhase: number;
     speed: number;
+    wanderTimer: number;
+    isSafe: boolean;
+    serverLastX?: number;
+    serverLastY?: number;
   }>>(new Map());
+
+  // Extract exit coordinates
+  const exits = useMemo(() => {
+    const list = elements
+      .filter((el) => el.type === 'exit_gate' || el.type === 'emergency_exit')
+      .map((el) => ({ x: el.x, y: el.y }));
+
+    if (list.length === 0) {
+      // Default perimeter exits if none in blueprint
+      return [
+        { x: 4, y: venueLength / 2 },
+        { x: venueWidth - 4, y: venueLength / 2 },
+        { x: venueWidth / 2, y: 4 },
+        { x: venueWidth / 2, y: venueLength - 4 },
+      ];
+    }
+    return list;
+  }, [elements, venueWidth, venueLength]);
 
   // Anatomical low-poly human body parts
   const torsoGeo = useMemo(() => new THREE.BoxGeometry(0.38, 0.55, 0.22), []);
@@ -83,6 +111,7 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
     ) return;
 
     const time = state.clock.getElapsedTime();
+    const dt = Math.min(0.05, delta);
     const count = Math.min(agents.length, maxInstances);
 
     torsoMeshRef.current.count = count;
@@ -94,7 +123,37 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
 
     for (let i = 0; i < count; i++) {
       const a = agents[i];
-      if (a.state === 'SAFE') {
+
+      // Retrieve or initialize kinematic cache
+      let cached = kinematicCache.current.get(a.id);
+      if (!cached) {
+        cached = {
+          x: a.x,
+          y: a.y,
+          vx: a.vx || (Math.random() - 0.5) * 0.5,
+          vy: a.vy || (Math.random() - 0.5) * 0.5,
+          targetX: a.target_x || (10 + Math.random() * (venueWidth - 20)),
+          targetY: a.target_y || (10 + Math.random() * (venueLength - 20)),
+          angle: Math.random() * Math.PI * 2,
+          stridePhase: i * 0.6,
+          speed: a.speed || 1.3,
+          wanderTimer: 2.0 + Math.random() * 8.0,
+          isSafe: a.state === 'SAFE',
+          serverLastX: a.x,
+          serverLastY: a.y,
+        };
+        kinematicCache.current.set(a.id, cached);
+      }
+
+      // If server is actively streaming moving coordinates, blend gently
+      if (a.x !== cached.serverLastX || a.y !== cached.serverLastY) {
+        cached.serverLastX = a.x;
+        cached.serverLastY = a.y;
+        cached.x = THREE.MathUtils.lerp(cached.x, a.x, Math.min(1.0, dt * 8.0));
+        cached.y = THREE.MathUtils.lerp(cached.y, a.y, Math.min(1.0, dt * 8.0));
+      }
+
+      if (a.state === 'SAFE' || cached.isSafe) {
         dummy.position.set(0, -100, 0);
         dummy.scale.set(0, 0, 0);
         dummy.updateMatrix();
@@ -107,51 +166,109 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
         continue;
       }
 
-      // Retrieve or initialize kinematic cache
-      let cached = kinematicCache.current.get(a.id);
-      if (!cached) {
-        cached = {
-          x: a.x,
-          y: a.y,
-          vx: a.vx || 0,
-          vy: a.vy || 0,
-          angle: 0,
-          stridePhase: i * 0.6,
-          speed: a.speed || 1.2
-        };
-        kinematicCache.current.set(a.id, cached);
+      const isRunning = isEmergency || a.state === 'EVACUATING' || a.state === 'PANIC' || (a.panic_level && a.panic_level > 0.35) || dangerZones.length > 0;
+      const isFallen = a.state === 'FALLEN' || a.state === 'STUMBLING';
+
+      // 1. Autonomous 60 FPS Steering Physics
+      if (isRunning) {
+        // --- EMERGENCY / FIRE EVACUATION STEERING ---
+        let fleeDirX = 0;
+        let fleeDirY = 0;
+        let inFireZone = false;
+
+        // Check distance to all active danger zones
+        for (const dz of dangerZones) {
+          const dx = cached.x - dz.x;
+          const dy = cached.y - dz.y;
+          const dist = Math.hypot(dx, dy) + 0.001;
+          const r = dz.radius || 15.0;
+
+          if (dist < r * 2.5) {
+            inFireZone = true;
+            const push = Math.min(6.0, 5.0 * (1.0 - dist / (r * 2.5)) + 2.0);
+            fleeDirX += (dx / dist) * push;
+            fleeDirY += (dy / dist) * push;
+          }
+        }
+
+        let desiredVx = 0;
+        let desiredVy = 0;
+
+        if (inFireZone) {
+          // Direct radial sprint away from fire
+          const fleeMag = Math.hypot(fleeDirX, fleeDirY) + 1e-5;
+          desiredVx = (fleeDirX / fleeMag) * 4.8;
+          desiredVy = (fleeDirY / fleeMag) * 4.8;
+        } else {
+          // Find nearest unblocked exit
+          let bestExit = exits[0];
+          let bestDist = 9999;
+          for (const ex of exits) {
+            const dist = Math.hypot(ex.x - cached.x, ex.y - cached.y);
+            if (dist < bestDist) {
+              bestDist = dist;
+              bestExit = ex;
+            }
+          }
+
+          if (bestDist < 2.5) {
+            cached.isSafe = true;
+            continue;
+          }
+
+          const dx = bestExit.x - cached.x;
+          const dy = bestExit.y - cached.y;
+          const d = Math.hypot(dx, dy) + 1e-5;
+          desiredVx = (dx / d) * (3.8 + (i % 5) * 0.25);
+          desiredVy = (dy / d) * (3.8 + (i % 5) * 0.25);
+        }
+
+        // Smooth acceleration towards desired sprint velocity
+        cached.vx = THREE.MathUtils.lerp(cached.vx, desiredVx, Math.min(1.0, dt * 10.0));
+        cached.vy = THREE.MathUtils.lerp(cached.vy, desiredVy, Math.min(1.0, dt * 10.0));
+      } else {
+        // --- NORMAL PEDESTRIAN WANDERING & CIRCULATION ---
+        cached.wanderTimer -= dt;
+        const distToTarget = Math.hypot(cached.targetX - cached.x, cached.targetY - cached.y);
+
+        if (distToTarget < 2.0 || cached.wanderTimer <= 0) {
+          cached.wanderTimer = 4.0 + Math.random() * 10.0;
+          cached.targetX = 6.0 + Math.random() * (venueWidth - 12.0);
+          cached.targetY = 6.0 + Math.random() * (venueLength - 12.0);
+        }
+
+        const dx = cached.targetX - cached.x;
+        const dy = cached.targetY - cached.y;
+        const d = Math.hypot(dx, dy) + 1e-5;
+        const desiredSpeed = 1.2 + (i % 4) * 0.15;
+
+        const desiredVx = (dx / d) * desiredSpeed;
+        const desiredVy = (dy / d) * desiredSpeed;
+
+        cached.vx = THREE.MathUtils.lerp(cached.vx, desiredVx, Math.min(1.0, dt * 4.0));
+        cached.vy = THREE.MathUtils.lerp(cached.vy, desiredVy, Math.min(1.0, dt * 4.0));
       }
 
-      // Smooth velocity
-      const targetVx = a.vx !== undefined ? a.vx : (a.target_x - a.x);
-      const targetVy = a.vy !== undefined ? a.vy : (a.target_y - a.y);
-      cached.vx = THREE.MathUtils.lerp(cached.vx, targetVx, Math.min(1.0, delta * 12.0));
-      cached.vy = THREE.MathUtils.lerp(cached.vy, targetVy, Math.min(1.0, delta * 12.0));
+      // Integrate position
+      cached.x += cached.vx * dt;
+      cached.y += cached.vy * dt;
 
-      // Continuous 60 FPS velocity extrapolation between server ticks
-      cached.x += cached.vx * delta;
-      cached.y += cached.vy * delta;
-
-      // Smoothly pull towards authoritative server coordinate
-      const lerpFactor = Math.min(1.0, delta * 12.0);
-      cached.x = THREE.MathUtils.lerp(cached.x, a.x, lerpFactor);
-      cached.y = THREE.MathUtils.lerp(cached.y, a.y, lerpFactor);
+      // Soft boundary clamp to keep within venue walls
+      cached.x = Math.max(3.0, Math.min(venueWidth - 3.0, cached.x));
+      cached.y = Math.max(3.0, Math.min(venueLength - 3.0, cached.y));
 
       const actualSpeed = Math.hypot(cached.vx, cached.vy);
       cached.speed = actualSpeed;
-
-      const isRunning = a.state === 'EVACUATING' || a.state === 'PANIC' || (a.panic_level && a.panic_level > 0.4) || isEmergency;
-      const isFallen = a.state === 'FALLEN' || a.state === 'STUMBLING';
-      const isMoving = actualSpeed > 0.06 && !isFallen;
+      const isMoving = actualSpeed > 0.08 && !isFallen;
       const hasSmoke = Boolean(a.smoke_inhalation && a.smoke_inhalation > 0.15);
 
-      // Smooth heading angle with shortest-arc wrapping
+      // Smooth heading rotation
       if (isMoving) {
         const targetAngle = Math.atan2(-cached.vy, cached.vx) + Math.PI / 2;
         let diff = targetAngle - cached.angle;
         while (diff < -Math.PI) diff += Math.PI * 2;
         while (diff > Math.PI) diff -= Math.PI * 2;
-        cached.angle += diff * Math.min(1.0, delta * 12.0);
+        cached.angle += diff * Math.min(1.0, dt * 12.0);
       }
 
       const worldX = cached.x + offsetX;
@@ -201,7 +318,7 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
         : (isMoving ? Math.max(5.0, actualSpeed * 7.5) : 0);
 
       if (isMoving) {
-        cached.stridePhase += delta * cadence;
+        cached.stridePhase += dt * cadence;
       }
 
       const stride = isMoving ? Math.sin(cached.stridePhase) : 0;
