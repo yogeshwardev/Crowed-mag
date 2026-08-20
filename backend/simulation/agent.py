@@ -15,7 +15,9 @@ class SimulationAgent:
         state: str = "WALKING",
         zone: str = "MAIN",
         color_index: Optional[int] = None,
-        height_scale: Optional[float] = None
+        height_scale: Optional[float] = None,
+        home_exit_id: Optional[str] = None,
+        assigned_role: str = "PEDESTRIAN"
     ):
         self.id = agent_id
         self.x = float(x)
@@ -29,6 +31,8 @@ class SimulationAgent:
         self.state = state  # WALKING, QUEUING, WAITING, ENTERING, EXITING, EVACUATING, REROUTING, BLOCKED, PANIC, STUMBLING, FALLEN, SAFE
         self.zone = zone
         self.exit_id: Optional[str] = None
+        self.home_exit_id = home_exit_id
+        self.assigned_role = assigned_role  # SEATED, QUEUING, CONCESSION, PEDESTRIAN
         self.color_index = color_index if color_index is not None else random.randint(0, 7)
         self.height_scale = height_scale if height_scale is not None else round(random.uniform(0.88, 1.12), 2)
 
@@ -45,6 +49,10 @@ class SimulationAgent:
         self.local_density = 0.0
         self.crush_pressure = 0.0  # N/m physical pressure experienced
         self.smoke_inhalation = 0.0 # 0.0 to 1.0 toxic smoke exposure
+
+        # Psychological reaction delay (freezing / orienting reflex before moving)
+        self.reaction_delay = 0.0
+        self.has_reacted = False
 
         # Stumble / Fall recovery timer
         self.fall_timer = 0.0
@@ -64,15 +72,26 @@ class SimulationAgent:
             self.waypoints = [(tx, ty)]
             self.current_waypoint_idx = 0
 
-    def trigger_emergency(self, evacuation_target: Optional[Tuple[float, float]] = None, panic: float = 1.0):
-        if self.state != "SAFE":
-            self.state = "PANIC" if panic > 0.6 else "EVACUATING"
-            self.panic_level = max(self.panic_level, panic)
-            self.desired_speed = random.uniform(3.4, 4.8)  # rapid sprint / stampede speed
-            if evacuation_target:
-                self.target_x, self.target_y = evacuation_target
-                self.waypoints = [evacuation_target]
-                self.current_waypoint_idx = 0
+    def trigger_emergency(self, evacuation_target: Optional[Tuple[float, float]] = None, panic: float = 1.0, fire_origin: Optional[Tuple[float, float]] = None):
+        if self.state == "SAFE":
+            return
+
+        # Calculate reaction delay based on distance to danger
+        if fire_origin:
+            dist = math.hypot(self.x - fire_origin[0], self.y - fire_origin[1])
+            # Nearby agents react almost instantly (<0.3s), distant agents take up to 2.0s
+            self.reaction_delay = min(2.0, dist * 0.04 + random.uniform(0.1, 0.4))
+        else:
+            self.reaction_delay = random.uniform(0.1, 0.8)
+
+        self.panic_level = max(self.panic_level, panic)
+        self.state = "PANIC" if panic > 0.6 else "EVACUATING"
+        self.desired_speed = random.uniform(3.6, 5.0)
+
+        if evacuation_target:
+            self.target_x, self.target_y = evacuation_target
+            self.waypoints = [evacuation_target]
+            self.current_waypoint_idx = 0
 
     def update_social_forces(
         self,
@@ -85,8 +104,8 @@ class SimulationAgent:
     ):
         """
         Updates agent acceleration, velocity, and position via Social Force Model,
-        incorporating Panic Contagion, Smoke Inhalation, High-Density Compression,
-        and Stampede Physics.
+        incorporating Reaction Delay, Radial Fire Repulsion, Panic Contagion,
+        Herding Behavior, Doorway Arching Friction, and PBD Hard Collisions.
         """
         if self.state == "SAFE":
             return
@@ -94,31 +113,36 @@ class SimulationAgent:
         # 0. Handle Stumble / Fall State
         if self.state in ["FALLEN", "STUMBLING"]:
             self.fall_timer -= dt
-            self.vx *= 0.5
-            self.vy *= 0.5
+            self.vx *= 0.4
+            self.vy *= 0.4
             if self.fall_timer <= 0:
-                # Recover back to feet
                 self.state = "PANIC" if is_emergency else "WALKING"
             return
 
-        # 1. Fire and Smoke Grid Environmental Interaction
+        # 0.1 Reaction Delay (Human Freezing / Hesitation when alarm rings)
+        if self.reaction_delay > 0:
+            self.reaction_delay -= dt
+            self.vx *= 0.8
+            self.vy *= 0.8
+            return
+
+        # 1. Fire and Smoke Grid Environmental Interaction & Direct Radial Flee
         f_hazard_x = 0.0
         f_hazard_y = 0.0
+
         if fire_grid:
             temp, flame, smoke = fire_grid.sample_at(self.x, self.y)
-            # Smoke inhalation reduces speed and causes coughing
             if smoke > 0.1:
-                self.smoke_inhalation = min(1.0, self.smoke_inhalation + smoke * dt * 0.2)
-                self.panic_level = min(1.0, self.panic_level + smoke * dt * 0.8)
+                self.smoke_inhalation = min(1.0, self.smoke_inhalation + smoke * dt * 0.25)
+                self.panic_level = min(1.0, self.panic_level + smoke * dt * 0.9)
                 self.desired_speed = max(0.6, self.base_speed * (1.0 - self.smoke_inhalation * 0.65))
 
-            # Heat avoidance force (gradient away from heat)
-            if temp > 60.0 or flame > 0.05:
+            if temp > 50.0 or flame > 0.03:
                 self.panic_level = 1.0
                 self.state = "PANIC"
-                self.desired_speed = random.uniform(3.6, 5.0)
+                self.desired_speed = random.uniform(3.8, 5.2)
 
-                # Sample surrounding temperature to find gradient of escape
+                # Gradient away from heat
                 t_right, _, _ = fire_grid.sample_at(self.x + 2.0, self.y)
                 t_left, _, _ = fire_grid.sample_at(self.x - 2.0, self.y)
                 t_up, _, _ = fire_grid.sample_at(self.x, self.y + 2.0)
@@ -128,34 +152,44 @@ class SimulationAgent:
                 grad_y = (t_up - t_down) / 4.0
                 g_mag = math.hypot(grad_x, grad_y) + 1e-6
 
-                push_mag = min(5000.0, 500.0 + (temp - 60.0) * 15.0)
+                push_mag = min(6000.0, 600.0 + (temp - 50.0) * 20.0)
                 f_hazard_x -= (grad_x / g_mag) * push_mag
                 f_hazard_y -= (grad_y / g_mag) * push_mag
-        elif danger_zones:
+
+        if danger_zones:
             for dz in danger_zones:
                 dx = self.x - dz["x"]
                 dy = self.y - dz["y"]
                 dist = math.hypot(dx, dy)
                 r = dz.get("radius", 15.0)
-                if dist < r * 1.6:
-                    self.panic_level = 1.0
-                    self.state = "PANIC"
-                    self.desired_speed = random.uniform(3.6, 4.8)
-                    d_safe = max(0.1, dist)
-                    push = 4500.0 * (1.0 - min(1.0, dist / (r * 1.6)))
+
+                # Radial flee force pushes directly away from the fire epicenter
+                if dist < r * 2.2:
+                    self.panic_level = max(self.panic_level, min(1.0, 1.4 - (dist / (r * 2.2))))
+                    if self.panic_level > 0.5:
+                        self.state = "PANIC"
+                        self.desired_speed = random.uniform(3.8, 5.2)
+
+                    d_safe = max(0.2, dist)
+                    push = 5500.0 * (1.0 - min(1.0, dist / (r * 2.2)))
                     f_hazard_x += (dx / d_safe) * push
                     f_hazard_y += (dy / d_safe) * push
 
-        # 2. Check Local Density, Panic Contagion & Contact Forces
+        # 2. Check Local Density, Panic Contagion, Herding, & Inter-Agent Forces
         nearby_count = 0
         max_nearby_panic = 0.0
         f_agents_x = 0.0
         f_agents_y = 0.0
         total_pressure = 0.0
 
-        is_stampeding = is_emergency or self.state in ["EVACUATING", "PANIC"] or self.panic_level > 0.5
+        # Herding velocity vector accumulation
+        herding_vx = 0.0
+        herding_vy = 0.0
+        herding_weight = 0.0
 
-        A = 2800.0 if is_stampeding else 1500.0
+        is_stampeding = is_emergency or self.state in ["EVACUATING", "PANIC"] or self.panic_level > 0.4
+
+        A = 3200.0 if is_stampeding else 1500.0
         B = 0.16
 
         for other in nearby_agents:
@@ -168,9 +202,16 @@ class SimulationAgent:
                 dx, dy = random.uniform(-0.1, 0.1), random.uniform(-0.1, 0.1)
                 dist = math.hypot(dx, dy)
 
-            if dist < 2.5:
+            if dist < 3.0:
                 nearby_count += 1
                 max_nearby_panic = max(max_nearby_panic, other.panic_level)
+
+                # Herding: look at forward neighbors (cosine angle > 0)
+                dot = (other.x - self.x) * self.vx + (other.y - self.y) * self.vy
+                if is_stampeding and dot > 0 and (other.vx != 0 or other.vy != 0):
+                    herding_vx += other.vx
+                    herding_vy += other.vy
+                    herding_weight += 1.0
 
                 r_sum = self.radius + other.radius
                 n_x = dx / dist
@@ -182,7 +223,7 @@ class SimulationAgent:
 
                 if overlap > 0:
                     # Physical compression stiffness (Crush pressure during stampede)
-                    contact_force = 18000.0 * overlap
+                    contact_force = 22000.0 * overlap
                     repulsion += contact_force
                     total_pressure += contact_force
 
@@ -190,8 +231,8 @@ class SimulationAgent:
                     t_x = -n_y
                     t_y = n_x
                     delta_v = (other.vx - self.vx) * t_x + (other.vy - self.vy) * t_y
-                    f_agents_x += 1600.0 * overlap * delta_v * t_x
-                    f_agents_y += 1600.0 * overlap * delta_v * t_y
+                    f_agents_x += 2000.0 * overlap * delta_v * t_x
+                    f_agents_y += 2000.0 * overlap * delta_v * t_y
 
                 f_agents_x += n_x * repulsion
                 f_agents_y += n_y * repulsion
@@ -201,27 +242,48 @@ class SimulationAgent:
         self.crush_pressure = total_pressure / max(1.0, math.pi * self.radius * 2.0)
 
         # Stumble check under severe crush pressure and stampede sprint
-        if is_stampeding and self.crush_pressure > 3500.0 and random.random() < 0.003:
+        if is_stampeding and self.crush_pressure > 3200.0 and random.random() < 0.004:
             self.state = "FALLEN"
             self.fall_timer = random.uniform(2.0, 4.5)
             return
 
-        # Panic emotional contagion spread
-        if max_nearby_panic > 0.4 and self.panic_level < max_nearby_panic:
-            self.panic_level = min(1.0, self.panic_level + max_nearby_panic * dt * 2.5)
-            if self.panic_level > 0.6 and self.state not in ["PANIC", "SAFE", "FALLEN"]:
+        # Panic emotional contagion spread (hearing screams / seeing fleeing crowds)
+        if max_nearby_panic > 0.35 and self.panic_level < max_nearby_panic:
+            self.panic_level = min(1.0, self.panic_level + max_nearby_panic * dt * 3.0)
+            if self.panic_level > 0.55 and self.state not in ["PANIC", "SAFE", "FALLEN"]:
                 self.state = "PANIC"
-                self.desired_speed = random.uniform(3.4, 4.8)
+                self.desired_speed = random.uniform(3.8, 5.2)
 
         # 3. Driving Force towards current waypoint or emergency exit gradient
         if is_stampeding:
+            # Get Dijkstra gradient direction to nearest safe exit
             dir_x, dir_y = nav_mesh.get_evacuation_direction(self.x, self.y)
+            
+            # Blend with herding behavior (following the flock)
+            if herding_weight > 0:
+                h_spd = math.hypot(herding_vx, herding_vy) + 1e-6
+                h_dir_x = herding_vx / h_spd
+                h_dir_y = herding_vy / h_spd
+                # 70% navigation goal + 30% herding
+                dir_x = dir_x * 0.7 + h_dir_x * 0.3
+                dir_y = dir_y * 0.7 + h_dir_y * 0.3
+                d_mag = math.hypot(dir_x, dir_y) + 1e-6
+                dir_x /= d_mag
+                dir_y /= d_mag
+
             if math.hypot(dir_x, dir_y) < 0.1:
                 dx = self.target_x - self.x
                 dy = self.target_y - self.y
                 d = math.hypot(dx, dy) + 1e-6
                 dir_x, dir_y = dx / d, dy / d
-            self.desired_speed = random.uniform(3.4, 4.8)
+
+            self.desired_speed = random.uniform(3.8, 5.2)
+
+            # Doorway Jamming & Arching Clogging (Faster-is-Slower Effect)
+            # If density is extreme at a doorway (>4.0 p/m²), physical friction reduces net forward flow
+            if self.local_density > 4.0:
+                clog_factor = max(0.25, 1.0 - (self.local_density - 4.0) * 0.35)
+                self.desired_speed *= clog_factor
         else:
             # Normal Pedestrian Waypoint Navigation & Autonomous Wandering
             self.wander_timer -= dt
@@ -236,7 +298,7 @@ class SimulationAgent:
                     self.target_y = new_ty
                     self.waypoints = [(new_tx, new_ty)]
                     self.current_waypoint_idx = 0
-                    if self.state != "QUEUING":
+                    if self.state != "QUEUING" and self.state != "WAITING":
                         self.state = "WALKING"
 
             if self.current_waypoint_idx < len(self.waypoints):
@@ -281,8 +343,8 @@ class SimulationAgent:
                 dist = math.hypot(ox, oy)
                 n_x = -ox / dist
                 n_y = -oy / dist
-                f_walls_x += n_x * 1200.0
-                f_walls_y += n_y * 1200.0
+                f_walls_x += n_x * 1400.0
+                f_walls_y += n_y * 1400.0
 
         # Total acceleration: (F_total) / mass
         acc_x = (f_drive_x + (f_agents_x + f_walls_x + f_hazard_x) / self.mass)
@@ -322,7 +384,7 @@ class SimulationAgent:
         # Check exit reach
         if is_stampeding:
             dist_to_exit = nav_mesh.get_distance_to_nearest_exit(self.x, self.y)
-            if dist_to_exit < 2.0:
+            if dist_to_exit < 2.2:
                 self.state = "SAFE"
                 self.vx = 0.0
                 self.vy = 0.0
@@ -391,5 +453,6 @@ class SimulationAgent:
             "panic_level": round(self.panic_level, 2),
             "local_density": round(self.local_density, 2),
             "crush_pressure": round(self.crush_pressure, 1),
-            "smoke_inhalation": round(self.smoke_inhalation, 2)
+            "smoke_inhalation": round(self.smoke_inhalation, 2),
+            "assigned_role": self.assigned_role
         }

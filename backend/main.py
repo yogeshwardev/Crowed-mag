@@ -195,6 +195,8 @@ def get_current_telemetry():
 
 # ================= EMERGENCY CONTROLS =================
 @app.post("/api/emergency/trigger")
+@app.post("/api/simulation/emergency")
+@app.post("/api/simulation/emergency/trigger")
 def trigger_emergency(trigger: EmergencyTrigger):
     sim_engine.trigger_emergency(
         scenario_type=trigger.scenario_type,

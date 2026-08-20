@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   BrainCircuit, AlertTriangle, CheckCircle2, ShieldAlert, ArrowRight,
   TrendingUp, Clock, Users, DoorOpen, Sparkles, RefreshCw, Activity,
-  Target, Cpu, BarChart2, Zap
+  Target, Cpu, BarChart2, Zap, Flame
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { AIRiskAnalysis, TelemetrySnapshot } from '../../types';
@@ -253,13 +253,59 @@ export const AISafetyAdvisor: React.FC<AISafetyAdvisorProps> = ({
         </div>
       )}
 
+      {/* Active Emergency Incident & Precautions Protocol Card */}
+      {(isEmergency || telemetry?.fire_state?.is_active) && (
+        <div className="bg-gradient-to-r from-rose-950/90 via-[#180d19]/90 to-[#0e1626]/90 border-2 border-rose-500/70 shadow-glow-red rounded-2xl p-4 sm:p-5 animate-pulse">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-rose-600/30 text-rose-400 border border-rose-500/50">
+                <ShieldAlert className="w-5 h-5 text-rose-400 animate-bounce" />
+              </div>
+              <div>
+                <span className="text-[10px] font-extrabold uppercase tracking-widest text-rose-400 block">AI Incident Response Protocol</span>
+                <h3 className="text-sm font-black text-white">
+                  🚨 ACTIVE EMERGENCY: {telemetry?.emergency_scenario ? telemetry.emergency_scenario.toUpperCase() : 'INCIDENT DETECTED'}
+                </h3>
+              </div>
+            </div>
+            {telemetry?.fire_state?.is_active && (
+              <div className="flex items-center gap-2 bg-rose-900/60 border border-rose-500/60 px-3 py-1 rounded-xl">
+                <Flame className="w-4 h-4 text-orange-400 animate-spin" />
+                <span className="text-xs font-mono font-bold text-orange-300">
+                  {telemetry.fire_state.peak_temperature_c.toFixed(0)}°C Peak Flame
+                </span>
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-rose-200/90 mb-4 font-medium leading-relaxed">
+            The AI Safety Engine has calculated immediate tactical precautions below. Execute priority steps to minimize stampede risk and maintain non-turbulent egress:
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {recommendations.slice(0, 4).map((rec, i) => (
+              <div
+                key={i}
+                className="flex items-start gap-3 p-3 rounded-xl bg-rose-950/50 border border-rose-800/60 hover:bg-rose-900/40 hover:border-rose-500/80 transition cursor-pointer"
+                onClick={() => onApplyRecommendation?.(rec)}
+              >
+                <div className="w-6 h-6 rounded-lg bg-rose-600/40 border border-rose-500/60 flex items-center justify-center text-xs font-black text-white shrink-0 mt-0.5">
+                  {i + 1}
+                </div>
+                <div className="text-xs text-slate-100 font-semibold leading-snug flex-1">
+                  {rec}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* AI Recommendations */}
-      {recommendations.length > 0 && (
+      {recommendations.length > 0 && !isEmergency && !telemetry?.fire_state?.is_active && (
         <div className="bg-[#0e1626]/90 border border-slate-800 rounded-2xl p-4 sm:p-5">
           <div className="flex items-center gap-2 mb-4">
             <Sparkles className="w-4 h-4 text-cyan-400" />
             <span className="text-xs font-bold uppercase tracking-wider text-cyan-300">
-              AI-Generated Recommendations
+              AI-Generated Safety Recommendations
             </span>
             <span className="ml-auto text-[9px] font-mono text-slate-500 bg-slate-800 px-2 py-0.5 rounded">
               {recommendations.length} actions

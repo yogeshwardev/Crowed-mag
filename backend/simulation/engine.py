@@ -112,44 +112,124 @@ class SimulationEngine:
     def spawn_crowd(self, count: int = 800):
         self.agents.clear()
         self.exited_count = 0
+
+        # Categorize blueprint elements
         seating_areas = [el for el in self.blueprint_elements if el.get("type") == "seating"]
-        entries = [el for el in self.blueprint_elements if el.get("type") in ["entry_gate", "security"]]
+        entries = [el for el in self.blueprint_elements if el.get("type") in ["entry_gate", "security", "ticket_counter"]]
+        amenities = [el for el in self.blueprint_elements if el.get("type") in ["food_stall", "restroom", "vip_area"]]
 
-        for i in range(count):
-            # Spawn near entries, roads, concourses or seating
-            if i % 3 == 0 and seating_areas:
-                s = random.choice(seating_areas)
-                sx = s["x"] + random.uniform(-s["width"]/2.5, s["width"]/2.5)
-                sy = s["y"] + random.uniform(-s["height"]/2.5, s["height"]/2.5)
-                tx = sx + random.uniform(-2, 2)
-                ty = sy + random.uniform(-2, 2)
-                state = "WAITING"
-            elif entries:
+        # Calculate proportions
+        seated_count = int(count * 0.45) if seating_areas else 0
+        queue_count = int(count * 0.20) if entries else 0
+        amenity_count = int(count * 0.15) if amenities else 0
+
+        agent_id = 1
+
+        # 1. Seating Areas (Grandstands & Tiers in organized seat rows)
+        if seating_areas and seated_count > 0:
+            for s in seating_areas:
+                sw = float(s.get("width", 20.0))
+                sh = float(s.get("height", 10.0))
+                scx = float(s.get("x", self.width / 2))
+                scy = float(s.get("y", self.length / 2))
+
+                cols = max(3, int(sw / 1.4))
+                rows = max(2, int(sh / 1.4))
+                for r in range(rows):
+                    for c in range(cols):
+                        if agent_id > seated_count:
+                            break
+                        sx = scx - sw/2 + (c + 0.5) * (sw / cols) + random.uniform(-0.15, 0.15)
+                        sy = scy - sh/2 + (r + 0.5) * (sh / rows) + random.uniform(-0.15, 0.15)
+
+                        agent = SimulationAgent(
+                            agent_id=agent_id,
+                            x=sx,
+                            y=sy,
+                            target_x=sx + random.uniform(-0.5, 0.5),
+                            target_y=sy + random.uniform(-0.5, 0.5),
+                            speed=random.uniform(1.1, 1.3),
+                            state="WAITING",
+                            zone=s.get("label", "SEATING"),
+                            assigned_role="SEATED"
+                        )
+                        self.agents.append(agent)
+                        agent_id += 1
+
+        # 2. Entry & Security Gate Queues
+        if entries and queue_count > 0:
+            for _ in range(queue_count):
                 e = random.choice(entries)
-                # Spawn in entry approach queue
-                sx = e["x"] + random.uniform(-6, 6)
-                sy = max(2.0, e["y"] - random.uniform(2, 18))
-                tx = e["x"] + random.uniform(-1, 1)
-                ty = e["y"] + random.uniform(5, 25)
-                state = "QUEUING"
-            else:
-                sx = random.uniform(5, self.width - 5)
-                sy = random.uniform(5, self.length - 5)
-                tx = random.uniform(5, self.width - 5)
-                ty = random.uniform(5, self.length - 5)
-                state = "WALKING"
+                ex = float(e.get("x", 50.0))
+                ey = float(e.get("y", 10.0))
+                sx = ex + random.uniform(-2.5, 2.5)
+                sy = max(2.0, ey - random.uniform(1.5, 14.0))
+                tx = ex + random.uniform(-0.5, 0.5)
+                ty = ey + random.uniform(2.0, 10.0)
 
-            agent = SimulationAgent(
-                agent_id=i + 1,
-                x=sx,
-                y=sy,
-                target_x=tx,
-                target_y=ty,
-                speed=random.uniform(1.1, 1.4),
-                state=state,
-                zone="CONCOURSE" if sy > 30 else "ENTRY"
-            )
-            self.agents.append(agent)
+                agent = SimulationAgent(
+                    agent_id=agent_id,
+                    x=sx,
+                    y=sy,
+                    target_x=tx,
+                    target_y=ty,
+                    speed=random.uniform(0.9, 1.2),
+                    state="QUEUING",
+                    zone=e.get("label", "ENTRANCE_QUEUE"),
+                    assigned_role="QUEUING",
+                    home_exit_id=e.get("id")
+                )
+                self.agents.append(agent)
+                agent_id += 1
+
+        # 3. Amenity Areas (Food Stalls, Restrooms, VIP)
+        if amenities and amenity_count > 0:
+            for _ in range(amenity_count):
+                am = random.choice(amenities)
+                ax = float(am.get("x", 20.0))
+                ay = float(am.get("y", 60.0))
+                aw = float(am.get("width", 8.0))
+                ah = float(am.get("height", 4.0))
+
+                sx = ax + random.uniform(-aw/2 - 1.5, aw/2 + 1.5)
+                sy = ay + random.uniform(-ah/2 - 2.5, ah/2 + 2.5)
+                tx = ax + random.uniform(-aw/2, aw/2)
+                ty = ay + random.uniform(-ah/2, ah/2)
+
+                agent = SimulationAgent(
+                    agent_id=agent_id,
+                    x=max(2.0, min(self.width - 2.0, sx)),
+                    y=max(2.0, min(self.length - 2.0, sy)),
+                    target_x=tx,
+                    target_y=ty,
+                    speed=random.uniform(1.0, 1.3),
+                    state="WAITING" if random.random() < 0.6 else "WALKING",
+                    zone=am.get("label", "CONCESSIONS"),
+                    assigned_role="CONCESSION"
+                )
+                self.agents.append(agent)
+                agent_id += 1
+
+        # 4. Roaming Pedestrians in Concourse & Plaza Walkways
+        while agent_id <= count:
+            sx = random.uniform(8.0, self.width - 8.0)
+            sy = random.uniform(8.0, self.length - 8.0)
+            if self.nav_mesh.is_walkable(sx, sy):
+                tx = random.uniform(8.0, self.width - 8.0)
+                ty = random.uniform(8.0, self.length - 8.0)
+                agent = SimulationAgent(
+                    agent_id=agent_id,
+                    x=sx,
+                    y=sy,
+                    target_x=tx,
+                    target_y=ty,
+                    speed=random.uniform(1.15, 1.45),
+                    state="WALKING",
+                    zone="CONCOURSE",
+                    assigned_role="PEDESTRIAN"
+                )
+                self.agents.append(agent)
+                agent_id += 1
 
     def trigger_emergency(self, scenario_type: str, x: Optional[float] = None, y: Optional[float] = None, radius: float = 15.0, blocked_exit_id: Optional[str] = None):
         self.is_emergency = True
@@ -158,12 +238,12 @@ class SimulationEngine:
         self.total_evac_target = len([a for a in self.agents if a.state != "SAFE"])
         self.exited_count = 0
 
-        fx = x if x is not None else (self.width / 2)
-        fy = y if y is not None else (self.length / 2)
+        fx = float(x if x is not None else (self.width / 2))
+        fy = float(y if y is not None else (self.length / 2))
 
         if scenario_type == "fire":
             # Real physical fire ignition and spread
-            self.fire_grid.ignite(fx, fy, radius=radius * 0.4, intensity=1.0)
+            self.fire_grid.ignite(fx, fy, radius=radius * 0.45, intensity=1.0)
             self.danger_zones = self.fire_grid.get_danger_zones()
             if not self.danger_zones:
                 self.danger_zones.append({"x": fx, "y": fy, "radius": radius})
@@ -175,12 +255,12 @@ class SimulationEngine:
         # Rebuild navigation mesh with updated danger zones and blocked exits
         self.nav_mesh.build_from_blueprint(self.blueprint_elements, self.danger_zones, self.blocked_exits)
 
-        # Notify agents and ignite realistic panic contagion
+        # Notify agents and ignite realistic panic contagion with distance delay & fire origin
         for a in self.agents:
             if a.state != "SAFE":
                 dist_to_hazard = math.hypot(a.x - fx, a.y - fy)
-                init_panic = max(0.4, 1.0 - (dist_to_hazard / max(30.0, radius * 2.5)))
-                a.trigger_emergency(panic=init_panic)
+                init_panic = min(1.0, max(0.45, 1.3 - (dist_to_hazard / max(35.0, radius * 2.5))))
+                a.trigger_emergency(panic=init_panic, fire_origin=(fx, fy))
 
     def clear_emergency(self):
         self.is_emergency = False

@@ -127,24 +127,28 @@ class AISafetyAdvisor:
         if not reasons:
             reasons.append("Crowd distribution, queue flow, and exit clearance are within safe operating limits.")
 
-        # Prescriptive recommendations
+        # Prescriptive recommendations & Emergency Precautions
         recommendations = []
         if fire_active:
-            recommendations.append("Trigger automated fire suppression and broadcast emergency egress sirens.")
+            recommendations.append("🚨 1. IMMEDIATE HAZARD ISOLATION: Activate automated CO₂ & sprinkler suppression in fire sector. Establish 25m perimeter.")
+            recommendations.append("🚪 2. EGRESS OVERRIDE: Unlock and illuminate Emergency Exits E1 & E2 at 100% duty cycle.")
+            recommendations.append("📢 3. MULTI-ZONE PA BROADCAST: Trigger automated emergency audio siren; divert South Concourse traffic to West Egress.")
+            recommendations.append("🛡️ 4. ANTI-CRUSH MARSHALLING: Station safety stewards at bottleneck archway to break crowd compression waves.")
+        elif is_emergency:
+            recommendations.append("🚨 1. EVACUATION PROTOCOL: Open all perimeter exit gates and disengage turnstile ratchets.")
+            recommendations.append("📢 2. DYNAMIC SIGNAGE: Display green directional escape arrows across all digital venue screens.")
+            recommendations.append("🛡️ 3. CONCOURSE DECONGESTION: Direct upper-tier seating down secondary stairwells in 30-second staggered waves.")
+
         if stumbling_count > 0:
-            recommendations.append("Deploy medical response team to fallen agent coordinates in high-density corridor.")
+            recommendations.append(f"🚑 MEDICAL TRIAGE: Rapid dispatch of on-site paramedic units to {stumbling_count} fallen / stumbling agent coordinates.")
         if max_density >= 3.5:
-            recommendations.append("Deploy queue marshals to disperse high-density clusters in the concourse.")
+            recommendations.append(f"⚠️ DENSITY RELIEF: Peak density is {max_density:.1f} p/m². Implement pulsed gating to prevent doorway arching.")
         if gate_score > 60:
-            recommendations.append("Activate secondary security turnstiles or redirect 30% of incoming flow to adjacent gates.")
+            recommendations.append("🎟️ GATE REBALANCING: Activate secondary security turnstiles or divert 35% of incoming queue flow to adjacent gates.")
         if blocked_exits_count > 0:
-            recommendations.append("Clear blocked exit corridors immediately and display dynamic reroute signboards.")
-        if usable_exits <= 2 or exit_score > 65:
-            recommendations.append("Add or open additional emergency exit to reduce evacuation distance.")
-        if occupancy_pct > 85:
-            recommendations.append("Initiate staggered entry gating at main entrance road.")
+            recommendations.append(f"⛔ EXIT UNBLOCKING: Dispatch venue security to clear {blocked_exits_count} obstructed emergency exit(s) immediately.")
         if not recommendations:
-            recommendations.append("Maintain current security throughput and continue automated sensor monitoring.")
+            recommendations.append("✅ ALL CLEAR: Maintain standard monitoring and ensure all turnstile sensor feeds remain operational.")
 
         factors = [
             RiskFactor(

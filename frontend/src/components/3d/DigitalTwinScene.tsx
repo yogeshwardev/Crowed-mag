@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import * as THREE from 'three';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
@@ -51,6 +52,7 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
   const [showHeatmap, setShowHeatmap] = useState<boolean>(true);
   const [heatmapOpacity, setHeatmapOpacity] = useState<number>(0.65);
   const [isPlacingFire, setIsPlacingFire] = useState<boolean>(false);
+  const [fireCursor, setFireCursor] = useState<{ x: number; z: number } | null>(null);
 
   const orbitControlsRef = useRef<OrbitControlsImpl>(null);
 
@@ -63,17 +65,6 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
   const queues = telemetry?.queues ?? [];
   const bottlenecks = telemetry?.bottlenecks ?? [];
 
-  // Click on 3D plane to place fire when in fire-placement mode
-  const handleGroundClick = (e: any) => {
-    if (isPlacingFire && onTriggerFire && e.point) {
-      // Convert Three.js 3D world coord back to 2D Blueprint coord
-      const bx = e.point.x + blueprint.width / 2;
-      const by = e.point.z + blueprint.length / 2;
-      onTriggerFire(Math.max(2, Math.min(blueprint.width - 2, bx)), Math.max(2, Math.min(blueprint.length - 2, by)));
-      setIsPlacingFire(false);
-    }
-  };
-
   return (
     <div className="relative w-full h-full bg-[#050810] overflow-hidden select-none">
       {/* 3D WebGL Canvas (Optimized for 60 FPS) */}
@@ -83,11 +74,6 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
         gl={{ powerPreference: "high-performance", antialias: true }}
         camera={{ position: [0, 75, 85], fov: 45 }}
         className={`w-full h-full ${isPlacingFire ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`}
-        onPointerDown={(e) => {
-          if (isPlacingFire) {
-            handleGroundClick(e);
-          }
-        }}
       >
         <color attach="background" args={['#070b14']} />
         <fog attach="fog" args={['#070b14', 60, 220]} />
@@ -139,6 +125,54 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
           onToggleBlockExit={onToggleBlockExit}
         />
 
+        {/* Interactive 3D Raycasting Ground Plane for Fire Ignition */}
+        <mesh
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[0, 0.03, 0]}
+          onPointerMove={(e) => {
+            if (isPlacingFire && e.point) {
+              setFireCursor({ x: e.point.x, z: e.point.z });
+            }
+          }}
+          onPointerDown={(e) => {
+            if (isPlacingFire && onTriggerFire && e.point) {
+              e.stopPropagation();
+              const bx = e.point.x + blueprint.width / 2;
+              const by = e.point.z + blueprint.length / 2;
+              onTriggerFire(
+                Math.max(2, Math.min(blueprint.width - 2, bx)),
+                Math.max(2, Math.min(blueprint.length - 2, by))
+              );
+              setIsPlacingFire(false);
+              setFireCursor(null);
+            }
+          }}
+        >
+          <planeGeometry args={[blueprint.width + 40, blueprint.length + 40]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
+
+        {/* Holographic 3D Fire Placement Target Reticle */}
+        {isPlacingFire && fireCursor && (
+          <group position={[fireCursor.x, 0.08, fireCursor.z]}>
+            {/* Outer Pulsing Danger Ring */}
+            <mesh rotation={[-Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[5.5, 6.0, 32]} />
+              <meshBasicMaterial color="#ef4444" side={THREE.DoubleSide} />
+            </mesh>
+            {/* Inner Translucent Zone */}
+            <mesh rotation={[-Math.PI / 2, 0, 0]}>
+              <circleGeometry args={[5.5, 32]} />
+              <meshBasicMaterial color="#ef4444" transparent opacity={0.25} side={THREE.DoubleSide} />
+            </mesh>
+            {/* Center Beacon */}
+            <mesh position={[0, 1.2, 0]}>
+              <coneGeometry args={[0.5, 2.4, 8]} />
+              <meshStandardMaterial color="#f97316" emissive="#ff4500" emissiveIntensity={3.0} />
+            </mesh>
+          </group>
+        )}
+
         {/* Instanced Low-Poly Human Crowd */}
         {overlayMode !== 'heatmap' && (
           <CrowdAgents
@@ -171,6 +205,22 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
           />
         )}
       </Canvas>
+
+      {/* Top Banner when placing fire */}
+      {isPlacingFire && (
+        <div className="absolute top-16 left-1/2 transform -translate-x-1/2 z-30 bg-rose-950/95 border border-rose-500/80 shadow-glow-red px-5 py-2.5 rounded-2xl flex items-center gap-3 backdrop-blur-md animate-bounce">
+          <Flame className="w-5 h-5 text-rose-400 animate-pulse" />
+          <span className="text-xs font-extrabold text-white tracking-wide">
+            🔥 CLICK ANYWHERE ON THE 3D MAP TO IGNITE FIRE
+          </span>
+          <button
+            onClick={() => { setIsPlacingFire(false); setFireCursor(null); }}
+            className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold rounded-lg ml-2"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       {/* Top Overlay: View & Camera Controls Toolbar */}
       <div className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none z-10 flex-wrap gap-2">
