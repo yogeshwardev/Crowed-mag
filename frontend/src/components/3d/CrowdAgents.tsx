@@ -239,6 +239,7 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
             // Only mark safe after dispersing 18m beyond the exit
             if (cached.egressDist > 18.0) {
               cached.isSafe = true;
+              a.state = 'SAFE';
               continue;
             }
           } else {

@@ -430,7 +430,10 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
           <div>
             <span className="text-[10px] text-slate-500 uppercase font-bold block">Active Agents</span>
             <span className="font-mono font-bold text-sm text-cyan-300">
-              {agents.filter(a => a.state !== 'SAFE').length.toLocaleString()}
+              {(isEmergency && telemetry?.evacuation?.remaining_people !== undefined
+                ? telemetry.evacuation.remaining_people
+                : agents.filter(a => a.state !== 'SAFE').length
+              ).toLocaleString()}
             </span>
           </div>
           {telemetry?.panic_agent_count && telemetry.panic_agent_count > 0 ? (

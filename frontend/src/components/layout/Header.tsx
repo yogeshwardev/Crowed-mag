@@ -44,7 +44,10 @@ export const Header: React.FC<HeaderProps> = ({
   }, []);
 
   const isEmergency = telemetry?.is_emergency ?? false;
-  const activeCrowd = telemetry?.capacity?.current_occupancy ?? telemetry?.active_agent_count ?? 0;
+  const isCompleted = telemetry?.evacuation?.is_completed || (isEmergency && telemetry?.evacuation?.remaining_people === 0 && telemetry?.evacuation?.total_people > 0);
+  const activeCrowd = isEmergency
+    ? (telemetry?.evacuation?.remaining_people ?? telemetry?.active_agent_count ?? 0)
+    : (telemetry?.capacity?.current_occupancy ?? telemetry?.active_agent_count ?? 0);
 
   const navItems: { id: NavigationTab; label: string; short: string; icon: React.ReactNode }[] = [
     { id: 'digital_twin', label: '3D Digital Twin', short: '3D Twin', icon: <Layers className="w-3.5 h-3.5" /> },
@@ -110,12 +113,16 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-2 shrink-0">
           {/* Emergency / Online Badge */}
           <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[11px] font-mono ${
-            isEmergency
+            isCompleted
+              ? 'bg-emerald-950/60 text-emerald-400 border-emerald-600'
+              : isEmergency
               ? 'bg-red-950/40 text-red-400 border-red-800/60'
               : 'bg-emerald-950/30 text-emerald-400 border-emerald-800/50'
           }`}>
-            <Radio className={`w-3 h-3 ${isEmergency ? 'animate-spin' : 'animate-pulse'}`} />
-            <span className="font-bold hidden sm:block">{isEmergency ? 'EMERGENCY' : 'ONLINE'}</span>
+            <Radio className={`w-3 h-3 ${isCompleted ? '' : isEmergency ? 'animate-spin' : 'animate-pulse'}`} />
+            <span className="font-bold hidden sm:block">
+              {isCompleted ? 'ALL EVACUATED' : isEmergency ? 'EMERGENCY' : 'ONLINE'}
+            </span>
           </div>
 
           {/* Venue Name */}
@@ -126,11 +133,15 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Live Crowd Count */}
           <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border font-mono text-xs ${
-            isEmergency ? 'bg-rose-950/40 border-rose-700/80 text-rose-300' : 'bg-slate-900/80 border-slate-700 text-slate-200'
+            isCompleted
+              ? 'bg-emerald-950/40 border-emerald-700/80 text-emerald-300'
+              : isEmergency
+              ? 'bg-rose-950/40 border-rose-700/80 text-rose-300'
+              : 'bg-slate-900/80 border-slate-700 text-slate-200'
           }`}>
-            <span className={`w-2 h-2 rounded-full shrink-0 ${isEmergency ? 'bg-rose-500 animate-ping' : 'bg-emerald-500 animate-pulse'}`} />
+            <span className={`w-2 h-2 rounded-full shrink-0 ${isCompleted ? 'bg-emerald-400' : isEmergency ? 'bg-rose-500 animate-ping' : 'bg-emerald-500 animate-pulse'}`} />
             <span className="font-bold text-sm">{activeCrowd.toLocaleString()}</span>
-            <span className="text-slate-400 hidden sm:block">people</span>
+            <span className="text-slate-400 hidden sm:block">{isEmergency ? 'remaining' : 'people'}</span>
           </div>
 
           {/* Clock */}
