@@ -33,6 +33,8 @@ import { CameraManager } from './CameraManager';
 interface DigitalTwinSceneProps {
   blueprint: Blueprint;
   telemetry: TelemetrySnapshot | null;
+  simSpeed?: number;
+  onSetSpeed?: (speed: number) => void;
   onTriggerFire?: (x: number, y: number) => void;
   onTriggerStampede?: () => void;
   onClearEmergency?: () => void;
@@ -42,6 +44,8 @@ interface DigitalTwinSceneProps {
 export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
   blueprint,
   telemetry,
+  simSpeed = 1.0,
+  onSetSpeed,
   onTriggerFire,
   onTriggerStampede,
   onClearEmergency,
@@ -183,6 +187,7 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
             isEmergency={isEmergency}
             dangerZones={dangerZones}
             elements={blueprint.elements}
+            speedMultiplier={simSpeed}
           />
         )}
 
@@ -239,30 +244,55 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
 
       {/* Top Overlay: View & Camera Controls Toolbar */}
       <div className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none z-10 flex-wrap gap-2">
-        {/* View Mode Switcher */}
-        <div className="flex items-center gap-1 bg-[#0a1122]/90 backdrop-blur-md p-1 rounded-xl border border-slate-800 shadow-2xl pointer-events-auto">
-          {[
-            { id: '3d', label: '3D Realistic', icon: <Layers className="w-3.5 h-3.5" /> },
-            { id: 'heatmap', label: 'Heatmap View', icon: <Activity className="w-3.5 h-3.5" /> },
-            { id: 'flow', label: 'Crowd Flow', icon: <Compass className="w-3.5 h-3.5" /> },
-            { id: 'evacuation', label: 'Evacuation Routes', icon: <Flame className="w-3.5 h-3.5" /> },
-          ].map((mode) => (
-            <button
-              key={mode.id}
-              onClick={() => setOverlayMode(mode.id as ViewOverlayMode)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                overlayMode === mode.id
-                  ? 'bg-cyan-600 text-white shadow-glow-cyan'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-              }`}
-            >
-              {mode.icon}
-              <span>{mode.label}</span>
-            </button>
-          ))}
+        {/* Left: View Mode Switcher + Speed Switcher */}
+        <div className="flex items-center gap-2 pointer-events-auto flex-wrap">
+          <div className="flex items-center gap-1 bg-[#0a1122]/90 backdrop-blur-md p-1 rounded-xl border border-slate-800 shadow-2xl">
+            {[
+              { id: '3d', label: '3D Realistic', icon: <Layers className="w-3.5 h-3.5" /> },
+              { id: 'heatmap', label: 'Heatmap View', icon: <Activity className="w-3.5 h-3.5" /> },
+              { id: 'flow', label: 'Crowd Flow', icon: <Compass className="w-3.5 h-3.5" /> },
+              { id: 'evacuation', label: 'Evacuation Routes', icon: <Flame className="w-3.5 h-3.5" /> },
+            ].map((mode) => (
+              <button
+                key={mode.id}
+                onClick={() => setOverlayMode(mode.id as ViewOverlayMode)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  overlayMode === mode.id
+                    ? 'bg-cyan-600 text-white shadow-glow-cyan'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                }`}
+              >
+                {mode.icon}
+                <span>{mode.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Speed Controls on 3D View */}
+          {onSetSpeed && (
+            <div className="flex items-center gap-1 bg-[#0a1122]/90 backdrop-blur-md p-1 rounded-xl border border-slate-800 shadow-2xl">
+              <div className="flex items-center gap-1 px-1.5 text-[10px] uppercase font-extrabold text-amber-400">
+                <Zap className="w-3 h-3" />
+                <span>Speed</span>
+              </div>
+              {[1, 1.5, 2, 2.5, 3].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => onSetSpeed(s)}
+                  className={`px-2 py-1 rounded-lg text-xs font-mono font-bold transition ${
+                    simSpeed === s
+                      ? 'bg-amber-500 text-black shadow-glow-cyan font-black'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  }`}
+                >
+                  {s}x
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Camera Viewpoints Switcher */}
+        {/* Right: Camera Viewpoints Switcher */}
         <div className="flex items-center gap-1 bg-[#0a1122]/90 backdrop-blur-md p-1 rounded-xl border border-slate-800 shadow-2xl pointer-events-auto overflow-x-auto">
           <div className="flex items-center gap-1 px-2 text-[10px] uppercase font-bold text-slate-500">
             <Camera className="w-3.5 h-3.5 text-cyan-400" />

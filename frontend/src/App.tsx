@@ -263,6 +263,8 @@ export const App: React.FC = () => {
           <DigitalTwinScene
             blueprint={currentBlueprint}
             telemetry={telemetry}
+            simSpeed={simSpeed}
+            onSetSpeed={handleSetSpeed}
             onTriggerFire={handleTriggerFire}
             onTriggerStampede={handleTriggerStampede}
             onClearEmergency={handleClearEmergency}

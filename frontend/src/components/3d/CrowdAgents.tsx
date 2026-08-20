@@ -10,6 +10,7 @@ interface CrowdAgentsProps {
   isEmergency: boolean;
   dangerZones?: Array<{ x: number; y: number; radius: number }>;
   elements?: BlueprintElement[];
+  speedMultiplier?: number;
 }
 
 const CLOTHING_COLORS = [
@@ -40,6 +41,7 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
   isEmergency,
   dangerZones = [],
   elements = [],
+  speedMultiplier = 1.0,
 }) => {
   const torsoMeshRef = useRef<THREE.InstancedMesh>(null);
   const headMeshRef = useRef<THREE.InstancedMesh>(null);
@@ -66,6 +68,8 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
     stridePhase: number;
     speed: number;
     wanderTimer: number;
+    isExiting: boolean;
+    egressDist: number;
     isSafe: boolean;
     serverLastX?: number;
     serverLastY?: number;
@@ -75,15 +79,15 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
   const exits = useMemo(() => {
     const list = elements
       .filter((el) => el.type === 'exit_gate' || el.type === 'emergency_exit')
-      .map((el) => ({ x: el.x, y: el.y }));
+      .map((el) => ({ x: el.x, y: el.y, width: el.width || 4.0 }));
 
     if (list.length === 0) {
       // Default perimeter exits if none in blueprint
       return [
-        { x: 4, y: venueLength / 2 },
-        { x: venueWidth - 4, y: venueLength / 2 },
-        { x: venueWidth / 2, y: 4 },
-        { x: venueWidth / 2, y: venueLength - 4 },
+        { x: 3, y: venueLength / 2, width: 6.0 },
+        { x: venueWidth - 3, y: venueLength / 2, width: 6.0 },
+        { x: venueWidth / 2, y: 3, width: 6.0 },
+        { x: venueWidth / 2, y: venueLength - 3, width: 6.0 },
       ];
     }
     return list;
@@ -111,7 +115,8 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
     ) return;
 
     const time = state.clock.getElapsedTime();
-    const dt = Math.min(0.05, delta);
+    const effectiveSpeed = Math.max(0.5, Math.min(4.0, speedMultiplier));
+    const dt = Math.min(0.08, delta * effectiveSpeed);
     const count = Math.min(agents.length, maxInstances);
 
     torsoMeshRef.current.count = count;
@@ -130,30 +135,33 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
         cached = {
           x: a.x,
           y: a.y,
-          vx: a.vx || (Math.random() - 0.5) * 0.5,
-          vy: a.vy || (Math.random() - 0.5) * 0.5,
+          vx: a.vx || (Math.random() - 0.5) * 0.4,
+          vy: a.vy || (Math.random() - 0.5) * 0.4,
           targetX: a.target_x || (10 + Math.random() * (venueWidth - 20)),
           targetY: a.target_y || (10 + Math.random() * (venueLength - 20)),
           angle: Math.random() * Math.PI * 2,
           stridePhase: i * 0.6,
           speed: a.speed || 1.3,
           wanderTimer: 2.0 + Math.random() * 8.0,
-          isSafe: a.state === 'SAFE',
+          isExiting: false,
+          egressDist: 0,
+          isSafe: false,
           serverLastX: a.x,
           serverLastY: a.y,
         };
         kinematicCache.current.set(a.id, cached);
       }
 
-      // If server is actively streaming moving coordinates, blend gently
+      // If server streams active non-zero position changes, blend smoothly
       if (a.x !== cached.serverLastX || a.y !== cached.serverLastY) {
         cached.serverLastX = a.x;
         cached.serverLastY = a.y;
-        cached.x = THREE.MathUtils.lerp(cached.x, a.x, Math.min(1.0, dt * 8.0));
-        cached.y = THREE.MathUtils.lerp(cached.y, a.y, Math.min(1.0, dt * 8.0));
+        cached.x = THREE.MathUtils.lerp(cached.x, a.x, Math.min(1.0, dt * 6.0));
+        cached.y = THREE.MathUtils.lerp(cached.y, a.y, Math.min(1.0, dt * 6.0));
       }
 
-      if (a.state === 'SAFE' || cached.isSafe) {
+      // Only hide after walking far beyond the exit gates (dist > 18m)
+      if (cached.isSafe) {
         dummy.position.set(0, -100, 0);
         dummy.scale.set(0, 0, 0);
         dummy.updateMatrix();
@@ -169,14 +177,14 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
       const isRunning = isEmergency || a.state === 'EVACUATING' || a.state === 'PANIC' || (a.panic_level && a.panic_level > 0.35) || dangerZones.length > 0;
       const isFallen = a.state === 'FALLEN' || a.state === 'STUMBLING';
 
-      // 1. Autonomous 60 FPS Steering Physics
+      // 1. Realistic Multi-Agent Stampede & Evacuation Dynamics
       if (isRunning) {
-        // --- EMERGENCY / FIRE EVACUATION STEERING ---
+        // --- STAMPEDE & FIRE ESCAPE ---
         let fleeDirX = 0;
         let fleeDirY = 0;
-        let inFireZone = false;
+        let inFireProximity = false;
 
-        // Check distance to all active danger zones
+        // Check distance to all active fire hotspots
         for (const dz of dangerZones) {
           const dx = cached.x - dz.x;
           const dy = cached.y - dz.y;
@@ -184,8 +192,8 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
           const r = dz.radius || 15.0;
 
           if (dist < r * 2.5) {
-            inFireZone = true;
-            const push = Math.min(6.0, 5.0 * (1.0 - dist / (r * 2.5)) + 2.0);
+            inFireProximity = true;
+            const push = Math.min(6.5, 5.5 * (1.0 - dist / (r * 2.5)) + 2.5);
             fleeDirX += (dx / dist) * push;
             fleeDirY += (dy / dist) * push;
           }
@@ -194,13 +202,14 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
         let desiredVx = 0;
         let desiredVy = 0;
 
-        if (inFireZone) {
-          // Direct radial sprint away from fire
+        if (inFireProximity) {
+          // Direct radial sprint away from the fire epicenter
           const fleeMag = Math.hypot(fleeDirX, fleeDirY) + 1e-5;
-          desiredVx = (fleeDirX / fleeMag) * 4.8;
-          desiredVy = (fleeDirY / fleeMag) * 4.8;
+          const sprintSpd = 4.2 + (i % 6) * 0.25;
+          desiredVx = (fleeDirX / fleeMag) * sprintSpd;
+          desiredVy = (fleeDirY / fleeMag) * sprintSpd;
         } else {
-          // Find nearest unblocked exit
+          // Find nearest unblocked exit gate
           let bestExit = exits[0];
           let bestDist = 9999;
           for (const ex of exits) {
@@ -211,51 +220,72 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
             }
           }
 
-          if (bestDist < 2.5) {
-            cached.isSafe = true;
-            continue;
-          }
+          // If reached exit gate, step through and continue outward egress
+          if (bestDist < 3.5 || cached.isExiting) {
+            cached.isExiting = true;
+            cached.egressDist += dt * 3.5;
 
-          const dx = bestExit.x - cached.x;
-          const dy = bestExit.y - cached.y;
-          const d = Math.hypot(dx, dy) + 1e-5;
-          desiredVx = (dx / d) * (3.8 + (i % 5) * 0.25);
-          desiredVy = (dy / d) * (3.8 + (i % 5) * 0.25);
+            // Outward vector away from venue center
+            const outwardX = bestExit.x - (venueWidth / 2);
+            const outwardY = bestExit.y - (venueLength / 2);
+            const outMag = Math.hypot(outwardX, outwardY) + 1e-5;
+
+            desiredVx = (outwardX / outMag) * 3.2;
+            desiredVy = (outwardY / outMag) * 3.2;
+
+            // Only mark safe after dispersing 18m beyond the exit
+            if (cached.egressDist > 18.0) {
+              cached.isSafe = true;
+              continue;
+            }
+          } else {
+            // Sprint towards nearest exit gate with doorway funneling
+            const dx = bestExit.x - cached.x;
+            const dy = bestExit.y - cached.y;
+            const d = Math.hypot(dx, dy) + 1e-5;
+
+            // Bottleneck Arching: naturally slow down at dense doorway choke points
+            const bottleneckSpeed = bestDist < 8.0 ? Math.max(1.8, 3.8 * (bestDist / 8.0)) : (3.8 + (i % 5) * 0.25);
+            desiredVx = (dx / d) * bottleneckSpeed;
+            desiredVy = (dy / d) * bottleneckSpeed;
+          }
         }
 
-        // Smooth acceleration towards desired sprint velocity
-        cached.vx = THREE.MathUtils.lerp(cached.vx, desiredVx, Math.min(1.0, dt * 10.0));
-        cached.vy = THREE.MathUtils.lerp(cached.vy, desiredVy, Math.min(1.0, dt * 10.0));
+        // Realistic acceleration with body inertia (takes ~1s to reach top sprint)
+        cached.vx = THREE.MathUtils.lerp(cached.vx, desiredVx, Math.min(1.0, dt * 5.0));
+        cached.vy = THREE.MathUtils.lerp(cached.vy, desiredVy, Math.min(1.0, dt * 5.0));
       } else {
-        // --- NORMAL PEDESTRIAN WANDERING & CIRCULATION ---
+        // --- NORMAL REAL-TIME PEDESTRIAN CIRCULATION & WANDERING ---
         cached.wanderTimer -= dt;
         const distToTarget = Math.hypot(cached.targetX - cached.x, cached.targetY - cached.y);
 
-        if (distToTarget < 2.0 || cached.wanderTimer <= 0) {
-          cached.wanderTimer = 4.0 + Math.random() * 10.0;
-          cached.targetX = 6.0 + Math.random() * (venueWidth - 12.0);
-          cached.targetY = 6.0 + Math.random() * (venueLength - 12.0);
+        if (distToTarget < 2.5 || cached.wanderTimer <= 0) {
+          cached.wanderTimer = 5.0 + Math.random() * 12.0;
+          cached.targetX = 8.0 + Math.random() * (venueWidth - 16.0);
+          cached.targetY = 8.0 + Math.random() * (venueLength - 16.0);
         }
 
         const dx = cached.targetX - cached.x;
         const dy = cached.targetY - cached.y;
         const d = Math.hypot(dx, dy) + 1e-5;
-        const desiredSpeed = 1.2 + (i % 4) * 0.15;
+        const walkSpeed = 1.3 + (i % 4) * 0.15;
 
-        const desiredVx = (dx / d) * desiredSpeed;
-        const desiredVy = (dy / d) * desiredSpeed;
+        const desiredVx = (dx / d) * walkSpeed;
+        const desiredVy = (dy / d) * walkSpeed;
 
-        cached.vx = THREE.MathUtils.lerp(cached.vx, desiredVx, Math.min(1.0, dt * 4.0));
-        cached.vy = THREE.MathUtils.lerp(cached.vy, desiredVy, Math.min(1.0, dt * 4.0));
+        cached.vx = THREE.MathUtils.lerp(cached.vx, desiredVx, Math.min(1.0, dt * 3.5));
+        cached.vy = THREE.MathUtils.lerp(cached.vy, desiredVy, Math.min(1.0, dt * 3.5));
       }
 
       // Integrate position
       cached.x += cached.vx * dt;
       cached.y += cached.vy * dt;
 
-      // Soft boundary clamp to keep within venue walls
-      cached.x = Math.max(3.0, Math.min(venueWidth - 3.0, cached.x));
-      cached.y = Math.max(3.0, Math.min(venueLength - 3.0, cached.y));
+      // Soft boundary clamp (allows exiting outward through perimeter gates)
+      if (!cached.isExiting) {
+        cached.x = Math.max(2.0, Math.min(venueWidth - 2.0, cached.x));
+        cached.y = Math.max(2.0, Math.min(venueLength - 2.0, cached.y));
+      }
 
       const actualSpeed = Math.hypot(cached.vx, cached.vy);
       cached.speed = actualSpeed;
@@ -268,7 +298,7 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
         let diff = targetAngle - cached.angle;
         while (diff < -Math.PI) diff += Math.PI * 2;
         while (diff > Math.PI) diff -= Math.PI * 2;
-        cached.angle += diff * Math.min(1.0, dt * 12.0);
+        cached.angle += diff * Math.min(1.0, dt * 10.0);
       }
 
       const worldX = cached.x + offsetX;
