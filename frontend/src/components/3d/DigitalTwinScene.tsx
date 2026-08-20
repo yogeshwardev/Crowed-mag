@@ -195,7 +195,7 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
         )}
 
         {/* Animated Flow Vector Streamlines */}
-        {(overlayMode === 'flow' || overlayMode === 'evacuation' || isEmergency) && (
+        {(overlayMode === 'flow' || overlayMode === 'evacuation') && (
           <FlowVisualizer
             agents={agents}
             venueWidth={blueprint.width}

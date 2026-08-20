@@ -42,7 +42,8 @@ class NavigationMesh:
 
     def is_walkable(self, x: float, y: float) -> bool:
         gx, gy = self.world_to_grid(x, y)
-        return bool(self.grid[gy, gx] == 0)
+        # 1 = solid wall/obstacle; 0 = open walkable; 2 = danger zone (walkable but high cost)
+        return bool(self.grid[gy, gx] != 1)
 
     def set_obstacle_rect(self, x: float, y: float, w: float, h: float, value: int = 1):
         min_gx, min_gy = self.world_to_grid(x - w / 2, y - h / 2)
@@ -146,22 +147,38 @@ class NavigationMesh:
             self.evacuation_gradient_x = None
             self.evacuation_gradient_y = None
 
+    def get_nearest_exit_pos(self, x: float, y: float) -> Tuple[float, float]:
+        if not self.exits:
+            return self.width / 2, self.length - 2.0
+        best_exit = min(self.exits, key=lambda e: math.hypot(e["x"] - x, e["y"] - y))
+        return float(best_exit["x"]), float(best_exit["y"])
+
     def get_evacuation_direction(self, x: float, y: float) -> Tuple[float, float]:
         """
         Returns normalized (dir_x, dir_y) pointing towards the nearest accessible exit in O(1) time.
         """
-        if self.evacuation_gradient_x is None:
-            return 0.0, 0.0
-        gx, gy = self.world_to_grid(x, y)
-        dx = float(self.evacuation_gradient_x[gy, gx])
-        dy = float(self.evacuation_gradient_y[gy, gx])
-        return dx, dy
+        if self.evacuation_gradient_x is not None:
+            gx, gy = self.world_to_grid(x, y)
+            dx = float(self.evacuation_gradient_x[gy, gx])
+            dy = float(self.evacuation_gradient_y[gy, gx])
+            if not (math.isnan(dx) or math.isnan(dy)) and math.hypot(dx, dy) > 0.05:
+                return dx, dy
+
+        # Fallback: direct vector to nearest exit
+        ex, ey = self.get_nearest_exit_pos(x, y)
+        dx = ex - x
+        dy = ey - y
+        d = math.hypot(dx, dy) + 1e-6
+        return dx / d, dy / d
 
     def get_distance_to_nearest_exit(self, x: float, y: float) -> float:
-        if self.evacuation_distance_field is None:
-            return 999.0
-        gx, gy = self.world_to_grid(x, y)
-        return float(self.evacuation_distance_field[gy, gx])
+        if self.evacuation_distance_field is not None:
+            gx, gy = self.world_to_grid(x, y)
+            d = float(self.evacuation_distance_field[gy, gx])
+            if not math.isnan(d) and d < 1e5:
+                return d
+        ex, ey = self.get_nearest_exit_pos(x, y)
+        return math.hypot(ex - x, ey - y)
 
     def find_path_astar(self, start_x: float, start_y: float, goal_x: float, goal_y: float) -> List[Tuple[float, float]]:
         """

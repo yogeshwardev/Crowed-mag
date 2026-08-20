@@ -31,28 +31,29 @@ export const DynamicFireAndSmoke: React.FC<DynamicFireAndSmokeProps> = ({
   const dummy = useMemo(() => new THREE.Object3D(), []);
 
   // Geometries & Materials
-  const flameGeo = useMemo(() => new THREE.ConeGeometry(0.5, 1.8, 6), []);
-  const smokeGeo = useMemo(() => new THREE.DodecahedronGeometry(0.8, 1), []);
-  const emberGeo = useMemo(() => new THREE.TetrahedronGeometry(0.12, 0), []);
+  const flameGeo = useMemo(() => new THREE.ConeGeometry(0.45, 1.6, 8), []);
+  const smokeGeo = useMemo(() => new THREE.SphereGeometry(0.55, 8, 8), []);
+  const emberGeo = useMemo(() => new THREE.TetrahedronGeometry(0.1, 0), []);
 
   const flameMat = useMemo(() => new THREE.MeshStandardMaterial({
-    color: '#ff4500',
-    emissive: '#ff7700',
-    emissiveIntensity: 3.5,
+    color: '#ff3700',
+    emissive: '#ff6600',
+    emissiveIntensity: 4.5,
     transparent: true,
-    opacity: 0.88,
-    roughness: 0.2,
+    opacity: 0.92,
+    roughness: 0.1,
   }), []);
 
   const smokeMat = useMemo(() => new THREE.MeshStandardMaterial({
-    color: '#1e293b',
+    color: '#334155',
     transparent: true,
-    opacity: 0.45,
-    roughness: 1.0,
+    opacity: 0.16,
+    depthWrite: false,
+    roughness: 0.9,
   }), []);
 
   const emberMat = useMemo(() => new THREE.MeshBasicMaterial({
-    color: '#ffdd44',
+    color: '#ffea00',
   }), []);
 
   // Particle state caches
@@ -207,12 +208,12 @@ export const DynamicFireAndSmoke: React.FC<DynamicFireAndSmokeProps> = ({
         s.y += s.vy * delta;
         s.z += s.vz * delta;
         const progress = 1.0 - (s.life / s.maxLife);
-        // Smoke expands significantly as it ascends
-        const currentScale = s.scale * (1.0 + progress * 3.8);
+        // Smoke expands moderately as it ascends
+        const currentScale = s.scale * (0.5 + progress * 1.5);
 
         dummy.position.set(s.x, s.y, s.z);
         dummy.rotation.set(time * s.rotSpeed, time * s.rotSpeed * 0.8, 0);
-        dummy.scale.set(currentScale, currentScale * 1.2, currentScale);
+        dummy.scale.set(currentScale, currentScale * 1.1, currentScale);
         dummy.updateMatrix();
         smokeMeshRef.current.setMatrixAt(smokeIdx, dummy.matrix);
         smokeMeshRef.current.setColorAt(
