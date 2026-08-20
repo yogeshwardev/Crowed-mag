@@ -248,6 +248,31 @@ def get_crowd_prediction():
     prediction.current_outflow_per_min = round(outflow_total, 1)
     return prediction
 
+# ================= AI VISION & CCTV ANALYTICS =================
+@app.get("/api/ai/cctv")
+def get_cctv_analytics():
+    return sim_engine.last_vision_snapshot or sim_engine.vision_engine.analyze_frame(
+        sim_engine.agents,
+        sim_engine.danger_zones,
+        sim_engine.is_emergency
+    )
+
+# ================= FIRE SIMULATION CONTROLS =================
+@app.get("/api/fire/state")
+def get_fire_simulation_state():
+    return sim_engine.fire_grid.get_state_summary()
+
+@app.post("/api/fire/ignite")
+def ignite_fire(x: float, y: float, radius: float = 4.0, intensity: float = 1.0):
+    sim_engine.trigger_emergency(scenario_type="fire", x=x, y=y, radius=radius)
+    return {"status": "FIRE_IGNITED", "x": x, "y": y, "radius": radius}
+
+@app.post("/api/fire/extinguish")
+def extinguish_fire():
+    sim_engine.fire_grid.clear()
+    sim_engine.danger_zones = [dz for dz in sim_engine.danger_zones if dz.get("type") != "fire"]
+    return {"status": "FIRE_EXTINGUISHED"}
+
 # ================= WHAT-IF SAFETY OPTIMIZER =================
 @app.post("/api/whatif/optimize", response_model=WhatIfOptimizationResponse)
 def run_whatif_optimizer():

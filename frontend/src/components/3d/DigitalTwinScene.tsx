@@ -135,6 +135,7 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
           dangerZones={dangerZones}
           blockedExits={blockedExits}
           queues={queues}
+          fireState={telemetry?.fire_state}
           onToggleBlockExit={onToggleBlockExit}
         />
 
@@ -172,7 +173,7 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
       </Canvas>
 
       {/* Top Overlay: View & Camera Controls Toolbar */}
-      <div className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none z-10">
+      <div className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none z-10 flex-wrap gap-2">
         {/* View Mode Switcher */}
         <div className="flex items-center gap-1 bg-[#0a1122]/90 backdrop-blur-md p-1 rounded-xl border border-slate-800 shadow-2xl pointer-events-auto">
           {[
@@ -197,23 +198,26 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
         </div>
 
         {/* Camera Viewpoints Switcher */}
-        <div className="flex items-center gap-1 bg-[#0a1122]/90 backdrop-blur-md p-1 rounded-xl border border-slate-800 shadow-2xl pointer-events-auto">
+        <div className="flex items-center gap-1 bg-[#0a1122]/90 backdrop-blur-md p-1 rounded-xl border border-slate-800 shadow-2xl pointer-events-auto overflow-x-auto">
           <div className="flex items-center gap-1 px-2 text-[10px] uppercase font-bold text-slate-500">
             <Camera className="w-3.5 h-3.5 text-cyan-400" />
             <span>Camera</span>
           </div>
           {[
             { id: 'overview', label: 'Overview' },
-            { id: 'entrance', label: 'Main Entrance' },
+            { id: 'entrance', label: 'Entrance' },
             { id: 'checkpoint', label: 'Turnstiles' },
             { id: 'top', label: 'Top View' },
-            { id: 'ground', label: 'Ground Eye' },
-            { id: 'evacuation', label: 'Egress' },
+            { id: 'ground', label: 'Ground' },
+            { id: 'cctv_01', label: '📹 CAM-1' },
+            { id: 'cctv_02', label: '📹 CAM-2' },
+            { id: 'cctv_03', label: '📹 CAM-3' },
+            { id: 'cctv_04', label: '📹 CAM-4' },
           ].map((cam) => (
             <button
               key={cam.id}
               onClick={() => setCameraMode(cam.id as CameraViewMode)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
+              className={`px-2 py-1 rounded-lg text-xs font-medium transition whitespace-nowrap ${
                 cameraMode === cam.id
                   ? 'bg-slate-700 text-cyan-300 font-semibold'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
@@ -338,6 +342,39 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
                 <span className="text-[10px] text-slate-500 uppercase font-bold block">Panicking</span>
                 <span className="font-mono font-bold text-sm text-rose-400 animate-pulse">
                   {telemetry.panic_agent_count.toLocaleString()}
+                </span>
+              </div>
+            </>
+          ) : null}
+          {telemetry?.stumbling_agent_count && telemetry.stumbling_agent_count > 0 ? (
+            <>
+              <div className="h-6 w-px bg-slate-800" />
+              <div>
+                <span className="text-[10px] text-slate-500 uppercase font-bold block">Fallen / Stumbling</span>
+                <span className="font-mono font-bold text-sm text-amber-400 animate-bounce">
+                  {telemetry.stumbling_agent_count}
+                </span>
+              </div>
+            </>
+          ) : null}
+          {telemetry?.peak_crush_pressure_n && telemetry.peak_crush_pressure_n > 500 ? (
+            <>
+              <div className="h-6 w-px bg-slate-800" />
+              <div>
+                <span className="text-[10px] text-slate-500 uppercase font-bold block">Crush Force</span>
+                <span className="font-mono font-bold text-sm text-rose-300">
+                  {telemetry.peak_crush_pressure_n.toFixed(0)} <span className="text-[9px] text-slate-500">N/m</span>
+                </span>
+              </div>
+            </>
+          ) : null}
+          {telemetry?.fire_state?.is_active ? (
+            <>
+              <div className="h-6 w-px bg-slate-800" />
+              <div>
+                <span className="text-[10px] text-slate-500 uppercase font-bold block">🔥 Fire Peak Temp</span>
+                <span className="font-mono font-bold text-sm text-orange-400 animate-pulse">
+                  {telemetry.fire_state.peak_temperature_c.toFixed(0)}°C
                 </span>
               </div>
             </>

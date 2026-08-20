@@ -11,6 +11,8 @@ from models.schemas import (
 from simulation.pathfinding import NavigationMesh
 from simulation.agent import SimulationAgent
 from simulation.queue_model import GateQueueManager
+from simulation.fire_sim import FireSimulationGrid
+from ai.vision_detector import VisionAnalyticsEngine
 
 class SimulationEngine:
     def __init__(self):
@@ -23,6 +25,8 @@ class SimulationEngine:
 
         self.nav_mesh = NavigationMesh(self.width, self.length, resolution=1.0)
         self.queue_manager = GateQueueManager()
+        self.fire_grid = FireSimulationGrid(self.width, self.length, resolution=1.0)
+        self.vision_engine = VisionAnalyticsEngine(self.width, self.length)
 
         self.agents: List[SimulationAgent] = []
         self.blueprint_elements: List[Dict] = []
@@ -52,6 +56,9 @@ class SimulationEngine:
         self.warning_density_threshold = 3.5
         self.critical_density_threshold = 4.5
 
+        # Cached vision analytics result
+        self.last_vision_snapshot: Dict[str, Any] = {}
+
         # Initialize with default layout
         self.load_default_venue()
 
@@ -65,6 +72,10 @@ class SimulationEngine:
         self.blueprint_elements = blueprint_data.get("elements", [])
 
         self.nav_mesh = NavigationMesh(self.width, self.length, resolution=1.0)
+        self.fire_grid = FireSimulationGrid(self.width, self.length, resolution=1.0)
+        self.fire_grid.initialize_from_blueprint(self.blueprint_elements)
+        self.vision_engine.configure_cameras(self.width, self.length)
+
         self.blocked_exits.clear()
         self.danger_zones.clear()
         self.is_emergency = False
@@ -147,9 +158,16 @@ class SimulationEngine:
         self.total_evac_target = len([a for a in self.agents if a.state != "SAFE"])
         self.exited_count = 0
 
-        if scenario_type in ["fire", "stampede", "crowd_surge"]:
-            fx = x if x is not None else (self.width / 2)
-            fy = y if y is not None else (self.length / 2)
+        fx = x if x is not None else (self.width / 2)
+        fy = y if y is not None else (self.length / 2)
+
+        if scenario_type == "fire":
+            # Real physical fire ignition and spread
+            self.fire_grid.ignite(fx, fy, radius=radius * 0.4, intensity=1.0)
+            self.danger_zones = self.fire_grid.get_danger_zones()
+            if not self.danger_zones:
+                self.danger_zones.append({"x": fx, "y": fy, "radius": radius})
+        elif scenario_type in ["stampede", "crowd_surge"]:
             self.danger_zones.append({"x": fx, "y": fy, "radius": radius})
         elif scenario_type == "exit_blockage" and blocked_exit_id:
             self.blocked_exits.add(blocked_exit_id)
@@ -158,25 +176,11 @@ class SimulationEngine:
         self.nav_mesh.build_from_blueprint(self.blueprint_elements, self.danger_zones, self.blocked_exits)
 
         # Notify agents and ignite realistic panic contagion
-        fx = x if x is not None else (self.width / 2)
-        fy = y if y is not None else (self.length / 2)
         for a in self.agents:
             if a.state != "SAFE":
-                dist = math.hypot(a.x - fx, a.y - fy)
-                init_panic = max(0.4, 1.0 - (dist / max(self.width, self.length)))
+                dist_to_hazard = math.hypot(a.x - fx, a.y - fy)
+                init_panic = max(0.4, 1.0 - (dist_to_hazard / max(30.0, radius * 2.5)))
                 a.trigger_emergency(panic=init_panic)
-
-    def block_exit(self, exit_id: str):
-        self.blocked_exits.add(exit_id)
-        self.nav_mesh.build_from_blueprint(self.blueprint_elements, self.danger_zones, self.blocked_exits)
-        for a in self.agents:
-            if a.exit_id == exit_id:
-                a.state = "REROUTING"
-
-    def unblock_exit(self, exit_id: str):
-        if exit_id in self.blocked_exits:
-            self.blocked_exits.remove(exit_id)
-            self.nav_mesh.build_from_blueprint(self.blueprint_elements, self.danger_zones, self.blocked_exits)
 
     def clear_emergency(self):
         self.is_emergency = False
@@ -184,17 +188,31 @@ class SimulationEngine:
         self.emergency_start_time = None
         self.danger_zones.clear()
         self.blocked_exits.clear()
+        self.fire_grid.clear()
         self.nav_mesh.build_from_blueprint(self.blueprint_elements, self.danger_zones, self.blocked_exits)
         for a in self.agents:
-            if a.state in ["EVACUATING", "PANIC", "SAFE"]:
+            if a.state != "SAFE":
+                a.panic_level = 0.0
                 a.state = "WALKING"
                 a.desired_speed = random.uniform(1.1, 1.4)
                 a.target_x = random.uniform(10, self.width - 10)
                 a.target_y = random.uniform(10, self.length - 10)
 
+    def block_exit(self, exit_id: str):
+        self.blocked_exits.add(exit_id)
+        self.nav_mesh.build_from_blueprint(self.blueprint_elements, self.danger_zones, self.blocked_exits)
+
+    def unblock_exit(self, exit_id: str):
+        self.blocked_exits.discard(exit_id)
+        self.nav_mesh.build_from_blueprint(self.blueprint_elements, self.danger_zones, self.blocked_exits)
+
     def tick(self, custom_dt: Optional[float] = None) -> Dict[str, Any]:
         """
-        Advances the simulation by dt seconds.
+        Advances the simulation by dt seconds:
+        - Advances 2D fire & smoke simulation
+        - Calculates multi-agent social forces
+        - Executes multi-pass Position-Based Dynamics (PBD) hard collision resolution
+        - Runs AI Computer Vision & Anomaly Detection inference
         """
         now = time.time()
         real_dt = now - self.last_tick_time
@@ -205,7 +223,17 @@ class SimulationEngine:
         if not self.is_running:
             return self.get_telemetry_snapshot()
 
-        # Spatial hashing for fast O(N) neighbor lookups
+        # 1. Advance Fire & Smoke Simulation Grid
+        if self.fire_grid.is_active or self.is_emergency:
+            self.fire_grid.tick(dt)
+            # Dynamically update active danger zones from spreading fire
+            fire_danger = self.fire_grid.get_danger_zones()
+            if fire_danger:
+                self.danger_zones = fire_danger
+                if self.tick_count % 15 == 0:
+                    self.nav_mesh.build_from_blueprint(self.blueprint_elements, self.danger_zones, self.blocked_exits)
+
+        # 2. Spatial hashing for fast O(N) neighbor lookups
         cell_size = 4.0
         grid_buckets: Dict[Tuple[int, int], List[SimulationAgent]] = {}
         for a in self.agents:
@@ -218,7 +246,7 @@ class SimulationEngine:
                 grid_buckets[bucket_key] = []
             grid_buckets[bucket_key].append(a)
 
-        # Update agents
+        # 3. Update agent social forces, navigation & environmental interaction
         for a in self.agents:
             if a.state == "SAFE":
                 continue
@@ -229,24 +257,64 @@ class SimulationEngine:
                 for dy in (-1, 0, 1):
                     neighbors.extend(grid_buckets.get((bx + dx, by + dy), []))
 
-            a.update_social_forces(dt, self.nav_mesh, neighbors, danger_zones=self.danger_zones, is_emergency=self.is_emergency)
+            a.update_social_forces(
+                dt,
+                self.nav_mesh,
+                neighbors,
+                danger_zones=self.danger_zones,
+                fire_grid=self.fire_grid,
+                is_emergency=self.is_emergency
+            )
 
-        # Count exited
+        # 4. Multi-pass Hard Circle-Circle Non-Penetration Constraint Solver (PBD)
+        # Prevents agents from overlapping or walking through each other
+        solver_iterations = 2
+        for _ in range(solver_iterations):
+            for bucket_key, bucket_agents in grid_buckets.items():
+                bx, by = bucket_key
+                # Test pairs inside current bucket
+                b_len = len(bucket_agents)
+                for i in range(b_len):
+                    a1 = bucket_agents[i]
+                    if a1.state == "SAFE":
+                        continue
+                    for j in range(i + 1, b_len):
+                        a2 = bucket_agents[j]
+                        a1.resolve_hard_collision(a2)
+
+                # Test with right, bottom, bottom-right, bottom-left adjacent buckets
+                for dx, dy in [(1, 0), (0, 1), (1, 1), (-1, 1)]:
+                    neighbor_bucket = grid_buckets.get((bx + dx, by + dy))
+                    if neighbor_bucket:
+                        for a1 in bucket_agents:
+                            if a1.state == "SAFE":
+                                continue
+                            for a2 in neighbor_bucket:
+                                a1.resolve_hard_collision(a2)
+
+        # 5. Count safe / exited
         safe_count = sum(1 for a in self.agents if a.state == "SAFE")
         self.exited_count = safe_count
 
-        # Inflow rates for queues
+        # 6. Inflow rates for queues
         inflow_rates = {}
         for gid, q in self.queue_manager.queues.items():
-            # Estimate agents heading within 15m of gate
             gx, gy = q["x"], q["y"]
             approaching = sum(1 for a in self.agents if a.state != "SAFE" and math.hypot(a.x - gx, a.y - gy) < 15.0)
             inflow_rates[gid] = float(approaching * 8.5)
 
         self.queue_manager.update(dt, inflow_rates)
 
-        # Update density matrix
+        # 7. Update density matrix
         self.update_density_grid()
+
+        # 8. Run AI Vision Analytics (every 3 ticks for performance)
+        if self.tick_count % 3 == 0:
+            self.last_vision_snapshot = self.vision_engine.analyze_frame(
+                self.agents,
+                self.danger_zones,
+                self.is_emergency
+            )
 
         return self.get_telemetry_snapshot()
 
@@ -328,10 +396,12 @@ class SimulationEngine:
         queues = self.queue_manager.get_queue_statuses()
         bottlenecks = self.queue_manager.detect_bottlenecks({})
 
-        # Serialize agents (subsample if above 1500 for low network latency)
         active_agents = [a for a in self.agents if a.state != "SAFE"]
-        panic_agents = [a for a in self.agents if getattr(a, 'panic_level', 0) > 0.5]
+        panic_agents = [a for a in self.agents if getattr(a, 'panic_level', 0) > 0.4 or a.state == "PANIC"]
+        stumbling_agents = [a for a in self.agents if a.state in ["FALLEN", "STUMBLING"]]
         agent_dicts = [a.to_state_dict() for a in self.agents]
+
+        peak_crush = float(max([getattr(a, 'crush_pressure', 0.0) for a in self.agents] or [0.0]))
 
         return {
             "venue_name": self.venue_name,
@@ -352,5 +422,9 @@ class SimulationEngine:
             "active_agent_count": len(active_agents),
             "total_agent_count": len(self.agents),
             "panic_agent_count": len(panic_agents),
+            "stumbling_agent_count": len(stumbling_agents),
+            "peak_crush_pressure_n": round(peak_crush, 1),
+            "fire_state": self.fire_grid.get_state_summary(),
+            "vision_analytics": self.last_vision_snapshot,
             "agents": agent_dicts
         }

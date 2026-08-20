@@ -6,7 +6,8 @@ class AISafetyAdvisor:
     def analyze(self, telemetry: Dict[str, Any], blueprint_elements: List[Dict[str, Any]]) -> AIRiskAnalysis:
         """
         Computes composite 0-100 AI Safety Risk Score, decomposes risk factors,
-        and generates actionable recommendations.
+        incorporating real vision anomaly detections, physical crush pressure,
+        fire spread propagation, and generates actionable recommendations.
         """
         capacity = telemetry.get("capacity", {})
         queues = telemetry.get("queues", [])
@@ -15,6 +16,11 @@ class AISafetyAdvisor:
         avg_density = telemetry.get("avg_density", 0.0)
         is_emergency = telemetry.get("is_emergency", False)
         occupancy_pct = capacity.get("occupancy_percentage", 0.0)
+        panic_count = telemetry.get("panic_agent_count", 0)
+        stumbling_count = telemetry.get("stumbling_agent_count", 0)
+        peak_crush = telemetry.get("peak_crush_pressure_n", 0.0)
+        fire_state = telemetry.get("fire_state", {})
+        vision_analytics = telemetry.get("vision_analytics", {})
 
         # Count exits and entry gates
         exit_count = sum(1 for el in blueprint_elements if el.get("type") in ["exit_gate", "emergency_exit"])
@@ -22,14 +28,17 @@ class AISafetyAdvisor:
         blocked_exits_count = len(telemetry.get("blocked_exits", []))
         usable_exits = max(0, exit_count - blocked_exits_count)
 
-        # 1. Factor: Density Score (0-100)
-        # Safe is <2.0, warning 3.5, critical >4.5
+        # 1. Factor: Crowd Density & Crush Pressure Score (0-100)
         if max_density < 2.0:
             density_score = (max_density / 2.0) * 30.0
         elif max_density < 3.5:
             density_score = 30.0 + ((max_density - 2.0) / 1.5) * 35.0
         else:
             density_score = 65.0 + min(35.0, ((max_density - 3.5) / 1.5) * 35.0)
+
+        # Add physical crush penalty if agents are experiencing compression
+        if peak_crush > 1000.0:
+            density_score = min(100.0, density_score + min(20.0, (peak_crush / 3000.0) * 20.0))
 
         # 2. Factor: Gate Queue & Inflow Congestion Score (0-100)
         queue_scores = []
@@ -46,7 +55,6 @@ class AISafetyAdvisor:
         if usable_exits == 0:
             exit_score = 98.0
         else:
-            # Ratio of active crowd per usable exit
             crowd_per_exit = capacity.get("current_occupancy", 500) / max(1, usable_exits)
             if crowd_per_exit < 300:
                 exit_score = 15.0
@@ -55,26 +63,35 @@ class AISafetyAdvisor:
             else:
                 exit_score = min(95.0, 45.0 + (crowd_per_exit - 800) / 30.0)
 
-        # 4. Factor: Occupancy Pressure Score (0-100)
-        occupancy_score = min(100.0, (occupancy_pct / 100.0) * 85.0)
+        # 4. Factor: Computer Vision Turbulence & Anomaly Score (0-100)
+        turbulence = vision_analytics.get("global_turbulence", 0.0)
+        anomalies = vision_analytics.get("anomalies", [])
+        vision_score = min(100.0, turbulence * 20.0 + len(anomalies) * 15.0)
 
-        # 5. Factor: Emergency Penalty
-        emergency_penalty = 25.0 if is_emergency else 0.0
+        # 5. Factor: Hazard & Environmental Severity
+        fire_active = fire_state.get("is_active", False)
+        burning_cells = fire_state.get("burning_cells", 0)
+        peak_temp = fire_state.get("peak_temperature_c", 22.0)
+        fire_score = min(100.0, (burning_cells * 2.5) + (max(0.0, peak_temp - 100.0) / 7.0)) if fire_active else 0.0
 
         # Weighted composite score
         weights = {
-            "density": 0.30,
-            "gate_queues": 0.25,
-            "exit_readiness": 0.25,
-            "occupancy": 0.20
+            "density": 0.28,
+            "gate_queues": 0.18,
+            "exit_readiness": 0.22,
+            "vision_anomalies": 0.18,
+            "fire_hazard": 0.14
         }
         composite_score = (
             density_score * weights["density"] +
             gate_score * weights["gate_queues"] +
             exit_score * weights["exit_readiness"] +
-            occupancy_score * weights["occupancy"] +
-            emergency_penalty
+            vision_score * weights["vision_anomalies"] +
+            fire_score * weights["fire_hazard"]
         )
+        if is_emergency:
+            composite_score += 15.0
+
         composite_score = round(float(np.clip(composite_score, 0.0, 100.0)), 1)
 
         # Classification
@@ -91,31 +108,39 @@ class AISafetyAdvisor:
 
         # Diagnostic reasons
         reasons = []
+        if fire_active:
+            reasons.append(f"FIRE HAZARD ACTIVE: {burning_cells} burning cells, peak temp {peak_temp:.0f}°C.")
         if is_emergency:
-            reasons.append(f"EMERGENCY ACTIVE ({telemetry.get('emergency_scenario', 'Alert').upper()}): High stampede risk.")
+            reasons.append(f"EMERGENCY EVACUATION ACTIVE ({telemetry.get('emergency_scenario', 'Alert').upper()}).")
+        if panic_count > 0:
+            reasons.append(f"Panic contagion detected: {panic_count} agents in panic state.")
+        if stumbling_count > 0:
+            reasons.append(f"Crush alert: {stumbling_count} fallen / stumbling agents detected.")
         if max_density >= 3.5:
-            reasons.append(f"Peak zone density exceeds safe threshold ({max_density:.1f} persons/m² > 3.5 persons/m²).")
+            reasons.append(f"Peak zone density exceeds safe threshold ({max_density:.1f} p/m² > 3.5 p/m²).")
+        for anom in anomalies[:2]:
+            reasons.append(f"AI Vision Alert: {anom.get('description', '')}")
         if gate_score > 60:
             reasons.append("Incoming crowd flow significantly exceeds security gate throughput.")
         if blocked_exits_count > 0:
             reasons.append(f"{blocked_exits_count} emergency exit(s) are blocked or unavailable.")
-        if usable_exits < 3:
-            reasons.append("Exit redundancy is low for the current venue scale.")
-        if occupancy_pct > 80:
-            reasons.append(f"Venue occupancy is at {occupancy_pct:.1f}% of critical capacity.")
         if not reasons:
             reasons.append("Crowd distribution, queue flow, and exit clearance are within safe operating limits.")
 
         # Prescriptive recommendations
         recommendations = []
+        if fire_active:
+            recommendations.append("Trigger automated fire suppression and broadcast emergency egress sirens.")
+        if stumbling_count > 0:
+            recommendations.append("Deploy medical response team to fallen agent coordinates in high-density corridor.")
         if max_density >= 3.5:
             recommendations.append("Deploy queue marshals to disperse high-density clusters in the concourse.")
         if gate_score > 60:
             recommendations.append("Activate secondary security turnstiles or redirect 30% of incoming flow to adjacent gates.")
         if blocked_exits_count > 0:
-            recommendations.append("Clear blocked exit corridors immediately and display reroute signboards.")
+            recommendations.append("Clear blocked exit corridors immediately and display dynamic reroute signboards.")
         if usable_exits <= 2 or exit_score > 65:
-            recommendations.append("Add or open additional emergency exit E4 to reduce evacuation distance.")
+            recommendations.append("Add or open additional emergency exit to reduce evacuation distance.")
         if occupancy_pct > 85:
             recommendations.append("Initiate staggered entry gating at main entrance road.")
         if not recommendations:
@@ -123,18 +148,18 @@ class AISafetyAdvisor:
 
         factors = [
             RiskFactor(
-                name="Crowd Density",
+                name="Crowd Density & Physical Crush",
                 score=round(density_score, 1),
                 weight=weights["density"],
                 status="CRITICAL" if density_score > 75 else ("HIGH" if density_score > 50 else "NORMAL"),
-                details=f"Peak: {max_density:.2f} p/m², Avg: {avg_density:.2f} p/m²"
+                details=f"Peak: {max_density:.2f} p/m², Crush: {peak_crush:.0f} N/m"
             ),
             RiskFactor(
-                name="Security Queue Flow",
-                score=round(gate_score, 1),
-                weight=weights["gate_queues"],
-                status="CRITICAL" if gate_score > 75 else ("HIGH" if gate_score > 50 else "NORMAL"),
-                details=f"Evaluated {len(queues)} entry points"
+                name="Vision & Anomaly Turbulence",
+                score=round(vision_score, 1),
+                weight=weights["vision_anomalies"],
+                status="CRITICAL" if vision_score > 75 else ("HIGH" if vision_score > 50 else "NORMAL"),
+                details=f"Turbulence: {turbulence:.2f}, {len(anomalies)} anomalies"
             ),
             RiskFactor(
                 name="Exit & Evacuation Readiness",
@@ -144,11 +169,18 @@ class AISafetyAdvisor:
                 details=f"{usable_exits} usable of {exit_count} exits"
             ),
             RiskFactor(
-                name="Occupancy Pressure",
-                score=round(occupancy_score, 1),
-                weight=weights["occupancy"],
-                status="HIGH" if occupancy_score > 70 else "NORMAL",
-                details=f"{occupancy_pct:.1f}% of max capacity"
+                name="Security Queue Flow",
+                score=round(gate_score, 1),
+                weight=weights["gate_queues"],
+                status="CRITICAL" if gate_score > 75 else ("HIGH" if gate_score > 50 else "NORMAL"),
+                details=f"Evaluated {len(queues)} entry points"
+            ),
+            RiskFactor(
+                name="Fire & Environmental Hazard",
+                score=round(fire_score, 1),
+                weight=weights["fire_hazard"],
+                status="CRITICAL" if fire_score > 60 else ("HIGH" if fire_score > 25 else "NORMAL"),
+                details=f"{burning_cells} burning cells, {peak_temp:.0f}°C"
             )
         ]
 

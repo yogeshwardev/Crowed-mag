@@ -63,6 +63,30 @@ export const CameraManager: React.FC<CameraManagerProps> = ({
         targetPos.current.set(0, 45, venueLength * 0.65);
         targetLookAt.current.set(0, 2, 0);
         break;
+
+      case 'cctv_01':
+        // North Gate CCTV
+        targetPos.current.set(venueWidth * 0.2 - venueWidth / 2, 7.5, venueLength * 0.18 - venueLength / 2);
+        targetLookAt.current.set(venueWidth * 0.2 - venueWidth / 2, 1.5, venueLength * 0.35 - venueLength / 2);
+        break;
+
+      case 'cctv_02':
+        // Central Concourse CCTV
+        targetPos.current.set(0, 9.0, 0);
+        targetLookAt.current.set(0, 1.5, 12);
+        break;
+
+      case 'cctv_03':
+        // East Stand CCTV
+        targetPos.current.set(venueWidth * 0.82 - venueWidth / 2, 8.0, 0);
+        targetLookAt.current.set(venueWidth * 0.7 - venueWidth / 2, 2.0, 0);
+        break;
+
+      case 'cctv_04':
+        // South Exit CCTV
+        targetPos.current.set(0, 7.0, venueLength * 0.88 - venueLength / 2);
+        targetLookAt.current.set(0, 2.0, venueLength * 0.75 - venueLength / 2);
+        break;
     }
   }, [viewMode, venueWidth, venueLength]);
 

@@ -114,8 +114,10 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
       const vx = a.vx || (a.target_x - a.x);
       const vy = a.vy || (a.target_y - a.y);
       const currentSpeed = Math.hypot(vx, vy);
-      const isRunning = a.state === 'EVACUATING' || a.state === 'PANIC' || isEmergency;
-      const isMoving = currentSpeed > 0.08;
+      const isRunning = a.state === 'EVACUATING' || a.state === 'PANIC' || (a.panic_level && a.panic_level > 0.4) || isEmergency;
+      const isFallen = a.state === 'FALLEN' || a.state === 'STUMBLING';
+      const isMoving = currentSpeed > 0.08 && !isFallen;
+      const hasSmoke = (a.smoke_inhalation && a.smoke_inhalation > 0.15);
 
       // Calculate heading angle
       let targetAngle = cached.angle;
@@ -128,12 +130,52 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
       const worldZ = cached.y + offsetZ;
       const hScale = a.height_scale || 1.0;
 
+      // Fallen / Stumbled Pose Handling
+      if (isFallen) {
+        // Person lying on the ground / crawling
+        const fallRoll = Math.PI / 2.2;
+        dummy.position.set(worldX, 0.18 * hScale, worldZ);
+        dummy.rotation.set(0, cached.angle, fallRoll);
+        dummy.scale.set(1.0, hScale, 1.0);
+        dummy.updateMatrix();
+        torsoMeshRef.current.setMatrixAt(i, dummy.matrix);
+
+        dummy.position.set(worldX + Math.cos(cached.angle) * 0.3, 0.25 * hScale, worldZ + Math.sin(cached.angle) * 0.3);
+        dummy.rotation.set(0, cached.angle, fallRoll);
+        dummy.scale.set(1.0, hScale, 1.0);
+        dummy.updateMatrix();
+        headMeshRef.current.setMatrixAt(i, dummy.matrix);
+
+        // Legs curled on floor
+        dummy.position.set(worldX - Math.cos(cached.angle) * 0.3, 0.12 * hScale, worldZ - Math.sin(cached.angle) * 0.3);
+        dummy.rotation.set(0.4, cached.angle, fallRoll);
+        dummy.scale.set(1.0, hScale, 1.0);
+        dummy.updateMatrix();
+        leftLegMeshRef.current.setMatrixAt(i, dummy.matrix);
+        rightLegMeshRef.current.setMatrixAt(i, dummy.matrix);
+
+        // Arms reaching out on floor
+        dummy.position.set(worldX, 0.15 * hScale, worldZ);
+        dummy.rotation.set(0, cached.angle, 0);
+        dummy.scale.set(1.0, hScale, 1.0);
+        dummy.updateMatrix();
+        leftArmMeshRef.current.setMatrixAt(i, dummy.matrix);
+        rightArmMeshRef.current.setMatrixAt(i, dummy.matrix);
+
+        torsoMeshRef.current.setColorAt(i, new THREE.Color('#991b1b')); // Dark Fallen Red
+        const skin = SKIN_TONES[i % SKIN_TONES.length];
+        headMeshRef.current.setColorAt(i, skin);
+        leftArmMeshRef.current.setColorAt(i, skin);
+        rightArmMeshRef.current.setColorAt(i, skin);
+        continue;
+      }
+
       // Realistic Walk / Stampede Run Animation Cycle
-      const animFreq = isRunning ? 14.0 : 8.5; // Fast cadence during stampede/panic
-      const animAmp = isRunning ? 0.75 : 0.45; // Wider stride angle when running
+      const animFreq = isRunning ? 14.5 : (hasSmoke ? 6.5 : 8.5); // Fast cadence during stampede
+      const animAmp = isRunning ? 0.78 : 0.45; // Wider stride angle when running
       const walkCycle = isMoving ? Math.sin(time * animFreq * (isRunning ? 1.4 : 1.0) + (i * 0.4)) : 0;
-      const bodyBounce = isMoving ? Math.abs(Math.sin(time * animFreq + (i * 0.4))) * (isRunning ? 0.08 : 0.04) : 0;
-      const forwardLean = isRunning ? 0.22 : 0.04; // Leaning forward during sprint/stampede
+      const bodyBounce = isMoving ? Math.abs(Math.sin(time * animFreq + (i * 0.4))) * (isRunning ? 0.09 : 0.04) : 0;
+      const forwardLean = isRunning ? 0.26 : (hasSmoke ? 0.35 : 0.04); // Leaning forward during sprint/smoke coughing
 
       // 1. Torso
       dummy.position.set(worldX, (1.0 + bodyBounce) * hScale, worldZ);
@@ -144,11 +186,11 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
 
       // 2. Head
       dummy.position.set(
-        worldX + Math.sin(cached.angle) * (forwardLean * 0.3),
+        worldX + Math.sin(cached.angle) * (forwardLean * 0.35),
         (1.42 + bodyBounce) * hScale,
-        worldZ + Math.cos(cached.angle) * (forwardLean * 0.3)
+        worldZ + Math.cos(cached.angle) * (forwardLean * 0.35)
       );
-      dummy.rotation.set(forwardLean * 0.5, cached.angle, 0);
+      dummy.rotation.set(forwardLean * 0.6, cached.angle, 0);
       dummy.scale.set(1.0, hScale, 1.0);
       dummy.updateMatrix();
       headMeshRef.current.setMatrixAt(i, dummy.matrix);
@@ -158,7 +200,6 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
       const cosA = Math.cos(cached.angle);
       const sinA = Math.sin(cached.angle);
 
-      // Left leg anchor
       dummy.position.set(
         worldX - cosA * legSpread,
         (0.42 + bodyBounce * 0.5) * hScale,
@@ -180,7 +221,7 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
       dummy.updateMatrix();
       rightLegMeshRef.current.setMatrixAt(i, dummy.matrix);
 
-      // 5. Left Arm (Swings in opposite phase to Left Leg)
+      // 5. Left Arm (Swings in opposite phase to Left Leg, or covers mouth in smoke)
       const armSpread = 0.23;
       dummy.position.set(
         worldX - cosA * armSpread,
@@ -203,8 +244,10 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
       dummy.updateMatrix();
       rightArmMeshRef.current.setMatrixAt(i, dummy.matrix);
 
-      // Color coding based on state
-      if (isRunning) {
+      // Color coding based on state & crush pressure
+      if (a.crush_pressure && a.crush_pressure > 2500.0) {
+        torsoMeshRef.current.setColorAt(i, new THREE.Color('#b91c1c')); // Severe crush dark red
+      } else if (isRunning) {
         torsoMeshRef.current.setColorAt(i, new THREE.Color('#dc2626')); // Panic Red
       } else if (a.state === 'QUEUING') {
         torsoMeshRef.current.setColorAt(i, new THREE.Color('#f59e0b')); // Queue Amber

@@ -126,6 +126,26 @@ export const api = {
     return res.json();
   },
 
+  async getCCTVAnalytics() {
+    const res = await fetch(`${API_BASE}/ai/cctv`);
+    return res.json();
+  },
+
+  async getFireState() {
+    const res = await fetch(`${API_BASE}/fire/state`);
+    return res.json();
+  },
+
+  async igniteFire(x: number, y: number, radius: number = 4.0) {
+    const res = await fetch(`${API_BASE}/fire/ignite?x=${x}&y=${y}&radius=${radius}`, { method: 'POST' });
+    return res.json();
+  },
+
+  async extinguishFire() {
+    const res = await fetch(`${API_BASE}/fire/extinguish`, { method: 'POST' });
+    return res.json();
+  },
+
   async runWhatIfOptimization(): Promise<WhatIfOptimizationResponse> {
     const res = await fetch(`${API_BASE}/whatif/optimize`, {
       method: 'POST',

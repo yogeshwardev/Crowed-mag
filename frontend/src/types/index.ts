@@ -66,11 +66,15 @@ export interface AgentData {
   target_x: number;
   target_y: number;
   speed: number;
-  state: string;
+  state: string; // WALKING, QUEUING, WAITING, ENTERING, EXITING, EVACUATING, REROUTING, BLOCKED, PANIC, STUMBLING, FALLEN, SAFE
   zone: string;
   exit_id?: string;
   color_index: number;
   height_scale: number;
+  panic_level?: number;
+  local_density?: number;
+  crush_pressure?: number;
+  smoke_inhalation?: number;
 }
 
 export interface QueueStatus {
@@ -107,6 +111,81 @@ export interface EvacuationStatus {
   is_completed: boolean;
 }
 
+export interface FireHotspot {
+  x: number;
+  y: number;
+  intensity: number;
+  smoke: number;
+  temp: number;
+}
+
+export interface FireState {
+  is_active: boolean;
+  burning_cells: number;
+  peak_temperature_c: number;
+  peak_smoke_density: number;
+  wind_vector: [number, number];
+  hotspots: FireHotspot[];
+}
+
+export interface CCTVBoundingBox {
+  id: number;
+  tag: string;
+  confidence: number;
+  world_x: number;
+  world_y: number;
+  speed: number;
+  state: string;
+}
+
+export interface CCTVCameraFeed {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  height: number;
+  fov_deg: number;
+  range: number;
+  fps: number;
+  resolution: string;
+  tracked_count: number;
+  average_speed: number;
+  turbulence_index: number;
+  optical_flow_div: number;
+  optical_flow_curl: number;
+  status: string;
+  bounding_boxes: CCTVBoundingBox[];
+}
+
+export interface VisionAnomaly {
+  camera_id: string;
+  camera_name: string;
+  type: string;
+  severity: string;
+  description: string;
+  confidence: number;
+  timestamp: number;
+}
+
+export interface DensityCluster {
+  cluster_id: string;
+  x: number;
+  y: number;
+  radius: number;
+  agent_count: number;
+  density_pm2: number;
+  velocity_dispersion: number;
+  severity: string;
+}
+
+export interface VisionAnalytics {
+  cameras: CCTVCameraFeed[];
+  anomalies: VisionAnomaly[];
+  clusters: DensityCluster[];
+  global_turbulence: number;
+  detection_confidence: number;
+}
+
 export interface TelemetrySnapshot {
   venue_name: string;
   blueprint_id: string;
@@ -114,7 +193,7 @@ export interface TelemetrySnapshot {
   tick: number;
   is_emergency: boolean;
   emergency_scenario?: string;
-  danger_zones: Array<{ x: number; y: number; radius: number }>;
+  danger_zones: Array<{ x: number; y: number; radius: number; max_temperature?: number; max_smoke?: number }>;
   blocked_exits: string[];
   capacity: CapacityCalculation;
   evacuation: EvacuationStatus;
@@ -127,11 +206,15 @@ export interface TelemetrySnapshot {
   total_agent_count: number;
   agents: AgentData[];
   panic_agent_count?: number;
+  stumbling_agent_count?: number;
+  peak_crush_pressure_n?: number;
+  fire_state?: FireState;
+  vision_analytics?: VisionAnalytics;
 }
 
 export interface RiskFactor {
   name: string;
-  factor_name?: string; // alias for backend compatibility
+  factor_name?: string;
   score: number;
   weight: number;
   status: string;
@@ -153,6 +236,7 @@ export interface ZoneForecast {
   current_density: number;
   predicted_density?: number;
   predicted_10m_density: number;
+  peak_density?: number;
   status: string;
   forecast_label?: string;
 }
@@ -196,7 +280,11 @@ export type CameraViewMode =
   | 'top'
   | 'ground'
   | 'first_person'
-  | 'evacuation';
+  | 'evacuation'
+  | 'cctv_01'
+  | 'cctv_02'
+  | 'cctv_03'
+  | 'cctv_04';
 
 export type ViewOverlayMode =
   | '3d'
@@ -204,7 +292,8 @@ export type ViewOverlayMode =
   | 'agents'
   | 'top'
   | 'flow'
-  | 'evacuation';
+  | 'evacuation'
+  | 'cctv';
 
 export type NavigationTab =
   | 'digital_twin'
@@ -213,4 +302,5 @@ export type NavigationTab =
   | 'ai_safety'
   | 'emergency_control'
   | 'what_if_lab'
-  | 'analytics_reports';
+  | 'analytics_reports'
+  | 'cctv_surveillance';

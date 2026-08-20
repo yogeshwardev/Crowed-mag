@@ -14,6 +14,7 @@ import { BlueprintStudio } from './components/blueprint/BlueprintStudio';
 import { LiveSimulationPanel } from './components/simulation/LiveSimulationPanel';
 import { AISafetyAdvisor } from './components/ai/AISafetyAdvisor';
 import { CrowdPrediction } from './components/ai/CrowdPrediction';
+import { CCTVMonitorModal } from './components/cctv/CCTVMonitorModal';
 import { EmergencyControl } from './components/emergency/EmergencyControl';
 import { WhatIfOptimizer } from './components/whatif/WhatIfOptimizer';
 import { AnalyticsDashboard } from './components/analytics/AnalyticsDashboard';
@@ -286,7 +287,15 @@ export const App: React.FC = () => {
           />
         )}
 
-        {/* Tab 5: Emergency Response Control */}
+        {/* Tab 5: Real-time CCTV AI Surveillance Wall */}
+        {activeTab === 'cctv_surveillance' && (
+          <CCTVMonitorModal
+            telemetry={telemetry}
+            onSelectCameraView={() => setActiveTab('digital_twin')}
+          />
+        )}
+
+        {/* Tab 6: Emergency Response Control */}
         {activeTab === 'emergency_control' && (
           <EmergencyControl
             telemetry={telemetry}

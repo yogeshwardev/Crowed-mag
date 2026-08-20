@@ -9,7 +9,8 @@ import {
   BarChart3,
   Compass,
   Radio,
-  Zap
+  Zap,
+  Video
 } from 'lucide-react';
 import { NavigationTab, TelemetrySnapshot } from '../../types';
 
@@ -50,6 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'blueprint_studio', label: 'Blueprint Studio', short: 'CAD', icon: <Compass className="w-3.5 h-3.5" /> },
     { id: 'live_simulation', label: 'Live Simulation', short: 'Simulation', icon: <Activity className="w-3.5 h-3.5" /> },
     { id: 'ai_safety', label: 'AI Safety', short: 'AI', icon: <BrainCircuit className="w-3.5 h-3.5" /> },
+    { id: 'cctv_surveillance', label: 'CCTV AI Vision', short: 'CCTV', icon: <Video className="w-3.5 h-3.5" /> },
     { id: 'emergency_control', label: 'Emergency', short: 'Emergency', icon: <Flame className="w-3.5 h-3.5" /> },
     { id: 'what_if_lab', label: 'What-If Lab', short: 'What-If', icon: <GitFork className="w-3.5 h-3.5" /> },
     { id: 'analytics_reports', label: 'Analytics', short: 'Reports', icon: <BarChart3 className="w-3.5 h-3.5" /> },

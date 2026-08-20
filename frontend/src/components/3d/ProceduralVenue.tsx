@@ -1,14 +1,16 @@
 import React, { useMemo } from 'react';
 import * as THREE from 'three';
-import { BlueprintElement, QueueStatus } from '../../types';
+import { BlueprintElement, QueueStatus, FireState } from '../../types';
+import { DynamicFireAndSmoke } from './DynamicFireAndSmoke';
 
 interface ProceduralVenueProps {
   width: number;
   length: number;
   elements: BlueprintElement[];
-  dangerZones: Array<{ x: number; y: number; radius: number }>;
+  dangerZones: Array<{ x: number; y: number; radius: number; max_temperature?: number; max_smoke?: number }>;
   blockedExits: string[];
   queues?: QueueStatus[];
+  fireState?: FireState;
   onToggleBlockExit?: (exitId: string) => void;
 }
 
@@ -18,6 +20,7 @@ export const ProceduralVenue: React.FC<ProceduralVenueProps> = ({
   elements,
   dangerZones,
   blockedExits,
+  fireState,
   onToggleBlockExit,
 }) => {
   const offsetX = -width / 2;
@@ -384,31 +387,46 @@ export const ProceduralVenue: React.FC<ProceduralVenueProps> = ({
         }
       })}
 
-      {/* 7. Active Fire Hazard Zones */}
-      {dangerZones.map((dz, idx) => {
-        const px = dz.x + offsetX;
-        const pz = dz.y + offsetZ;
-        return (
-          <group key={idx} position={[px, 0, pz]}>
-            <mesh position={[0, dz.radius * 0.35, 0]}>
-              <sphereGeometry args={[dz.radius, 24, 24, 0, Math.PI * 2, 0, Math.PI * 0.5]} />
-              <meshBasicMaterial color="#ef4444" transparent opacity={0.25} side={THREE.DoubleSide} />
+      {/* 7. Real Dynamic Fire & Smoke Simulation Mesh */}
+      <DynamicFireAndSmoke
+        fireState={fireState}
+        dangerZones={dangerZones}
+        venueWidth={width}
+        venueLength={length}
+      />
+
+      {/* 8. 3D CCTV Security Camera Mounting Posts */}
+      {[
+        { x: width * 0.2 + offsetX, z: length * 0.18 + offsetZ, rot: Math.PI / 4, label: 'CAM-01' },
+        { x: width * 0.5 + offsetX, z: length * 0.5 + offsetZ, rot: 0, label: 'CAM-02' },
+        { x: width * 0.82 + offsetX, z: length * 0.5 + offsetZ, rot: -Math.PI / 2, label: 'CAM-03' },
+        { x: width * 0.5 + offsetX, z: length * 0.88 + offsetZ, rot: Math.PI, label: 'CAM-04' },
+      ].map((cam, cIdx) => (
+        <group key={`cctv_post_${cIdx}`} position={[cam.x, 0, cam.z]}>
+          {/* Mast */}
+          <mesh position={[0, 4.0, 0]}>
+            <cylinderGeometry args={[0.08, 0.12, 8.0, 8]} />
+            <meshStandardMaterial color="#475569" metalness={0.8} roughness={0.3} />
+          </mesh>
+          {/* Camera Arm & Housing */}
+          <group position={[0, 7.8, 0]} rotation={[0.2, cam.rot, 0]}>
+            <mesh position={[0, 0, 0.35]}>
+              <boxGeometry args={[0.22, 0.22, 0.65]} />
+              <meshStandardMaterial color="#ffffff" roughness={0.2} metalness={0.7} />
             </mesh>
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.08, 0]}>
-              <ringGeometry args={[dz.radius * 0.92, dz.radius, 24]} />
-              <meshBasicMaterial color="#ef4444" side={THREE.DoubleSide} />
+            {/* Lens */}
+            <mesh position={[0, 0, 0.7]} rotation={[Math.PI / 2, 0, 0]}>
+              <cylinderGeometry args={[0.08, 0.08, 0.08, 12]} />
+              <meshStandardMaterial color="#0f172a" roughness={0.1} metalness={0.9} />
             </mesh>
-            <mesh position={[0, 3.5, 0]}>
-              <coneGeometry args={[2.5, 7.0, 12]} />
-              <meshStandardMaterial color="#ea580c" emissive="#f97316" emissiveIntensity={2.0} transparent opacity={0.9} />
-            </mesh>
-            <mesh position={[0, 9.0, 0]}>
-              <cylinderGeometry args={[4.0, 2.0, 6.0, 8]} />
-              <meshStandardMaterial color="#334155" transparent opacity={0.5} roughness={1.0} />
+            {/* Blinking Live Green/Red AI Indicator LED */}
+            <mesh position={[0.09, 0.09, 0.65]}>
+              <sphereGeometry args={[0.03, 6, 6]} />
+              <meshStandardMaterial color="#22c55e" emissive="#4ade80" emissiveIntensity={2.5} />
             </mesh>
           </group>
-        );
-      })}
+        </group>
+      ))}
     </group>
   );
 };
