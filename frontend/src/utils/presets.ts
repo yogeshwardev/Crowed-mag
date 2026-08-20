@@ -201,9 +201,9 @@ export function generateInitialAgents(count: number = 600, width: number = 120, 
   return agents;
 }
 
-export function generateInitialTelemetry(blueprint: Blueprint = STADIUM_PRESET): TelemetrySnapshot {
+export function generateInitialTelemetry(blueprint: Blueprint = STADIUM_PRESET, count: number = 600): TelemetrySnapshot {
   const totalArea = blueprint.width * blueprint.length;
-  const agents = generateInitialAgents(600, blueprint.width, blueprint.length);
+  const agents = generateInitialAgents(count, blueprint.width, blueprint.length);
 
   return {
     venue_name: blueprint.name,
@@ -211,6 +211,11 @@ export function generateInitialTelemetry(blueprint: Blueprint = STADIUM_PRESET):
     venue_type: blueprint.venue_type,
     tick: 1,
     is_emergency: false,
+    active_agent_count: agents.length,
+    total_agent_count: agents.length,
+    panic_agent_count: 0,
+    stumbling_agent_count: 0,
+    agents,
     danger_zones: [],
     blocked_exits: [],
     capacity: {
@@ -221,7 +226,7 @@ export function generateInitialTelemetry(blueprint: Blueprint = STADIUM_PRESET):
       warning_capacity: Math.floor(totalArea * 0.75 * 3.5),
       maximum_capacity: Math.floor(totalArea * 0.75 * 4.5),
       current_occupancy: agents.length,
-      occupancy_percentage: 16.5,
+      occupancy_percentage: Math.round((agents.length / Math.max(1, totalArea * 0.75 * 2.0)) * 100),
       safe_density_threshold: 2.0,
       warning_density_threshold: 3.5,
       critical_density_threshold: 4.5
@@ -233,7 +238,7 @@ export function generateInitialTelemetry(blueprint: Blueprint = STADIUM_PRESET):
       exited_people: 0,
       remaining_people: agents.length,
       evacuation_percentage: 0,
-      estimated_completion_seconds: 120,
+      estimated_completion_seconds: Math.max(30, Math.round(agents.length * 0.25)),
       average_evacuation_speed: 1.2,
       is_completed: false
     },
@@ -269,9 +274,6 @@ export function generateInitialTelemetry(blueprint: Blueprint = STADIUM_PRESET):
     bottlenecks: [],
     max_density: 2.8,
     avg_density: 1.1,
-    density_grid: Array(16).fill(0).map(() => Array(24).fill(0.8)),
-    active_agent_count: agents.length,
-    total_agent_count: agents.length,
-    agents: agents
+    density_grid: Array(16).fill(0).map(() => Array(24).fill(0.8))
   };
 }

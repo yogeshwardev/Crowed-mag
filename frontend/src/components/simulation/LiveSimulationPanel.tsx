@@ -259,15 +259,31 @@ export const LiveSimulationPanel: React.FC<LiveSimulationPanelProps> = ({
 
         {/* Crowd Spawn Controller */}
         <div className="bg-[#0e1626]/90 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4">
-          <div className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-cyan-400" />
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-300">Crowd Size Controller</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-cyan-400" />
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-300">Crowd Size Controller</span>
+            </div>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-cyan-400 border border-slate-700">
+              Active: {activeCrowd.toLocaleString()}
+            </span>
           </div>
 
           <div>
-            <div className="flex justify-between text-[11px] text-slate-400 mb-2">
+            <div className="flex items-center justify-between text-[11px] text-slate-400 mb-2">
               <span>Target Crowd Size</span>
-              <span className="font-mono text-cyan-300 font-bold">{crowdTarget.toLocaleString()} people</span>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min={50}
+                  max={5000}
+                  step={50}
+                  value={crowdTarget}
+                  onChange={e => setCrowdTarget(Math.max(10, Math.min(5000, parseInt(e.target.value) || 50)))}
+                  className="w-24 px-2 py-1 bg-slate-950 border border-slate-700 rounded-lg text-xs font-mono font-bold text-cyan-300 text-right focus:outline-none focus:border-cyan-500"
+                />
+                <span className="text-xs text-slate-500 font-mono">people</span>
+              </div>
             </div>
             <input
               type="range"
@@ -278,28 +294,33 @@ export const LiveSimulationPanel: React.FC<LiveSimulationPanelProps> = ({
               onChange={e => setCrowdTarget(parseInt(e.target.value))}
               className="w-full accent-cyan-500"
             />
-            <div className="flex justify-between text-[9px] text-slate-600 mt-1">
+            <div className="flex justify-between text-[9px] text-slate-600 mt-1 font-mono">
               <span>50</span><span>1,000</span><span>2,500</span><span>5,000</span>
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
-            {[200, 800, 2000].map(n => (
+          <div className="grid grid-cols-6 gap-1.5">
+            {[200, 500, 1000, 1500, 2000, 3000].map(n => (
               <button
                 key={n}
-                onClick={() => setCrowdTarget(n)}
-                className="py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-mono font-bold text-center transition"
+                onClick={() => { setCrowdTarget(n); onSetCrowdSize(n); }}
+                className={`py-1.5 rounded-lg text-xs font-mono font-bold text-center transition ${
+                  crowdTarget === n
+                    ? 'bg-cyan-600 text-white shadow-glow-cyan'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white'
+                }`}
               >
-                {n.toLocaleString()}
+                {n >= 1000 ? `${n/1000}k` : n}
               </button>
             ))}
           </div>
 
           <button
             onClick={handleSpawn}
-            className="w-full py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition active:scale-95"
+            className="w-full py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition active:scale-95 flex items-center justify-center gap-2 shadow-glow-cyan"
           >
-            Spawn {crowdTarget.toLocaleString()} Agents
+            <Users className="w-4 h-4" />
+            <span>⚡ POPULATE {crowdTarget.toLocaleString()} CITIZENS</span>
           </button>
         </div>
       </div>

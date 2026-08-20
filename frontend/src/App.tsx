@@ -281,6 +281,15 @@ export const App: React.FC = () => {
   };
 
   const handleSetCrowdSize = async (count: number) => {
+    const updatedTelemetry = generateInitialTelemetry(currentBlueprint, count);
+    setTelemetry(updatedTelemetry);
+
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      try {
+        socketRef.current.send('SET_CROWD', { count });
+      } catch (e) {}
+    }
+
     try {
       await api.setCrowdSize(count);
     } catch (err) {}
