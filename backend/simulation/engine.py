@@ -327,6 +327,7 @@ class SimulationEngine:
             grid_buckets[bucket_key].append(a)
 
         # 3. Update agent social forces, navigation & environmental interaction
+        amenities = [el for el in self.blueprint_elements if el.get("type") in ["food_stall", "restroom", "vip_area"]]
         for a in self.agents:
             if a.state == "SAFE":
                 continue
@@ -343,7 +344,8 @@ class SimulationEngine:
                 neighbors,
                 danger_zones=self.danger_zones,
                 fire_grid=self.fire_grid,
-                is_emergency=self.is_emergency
+                is_emergency=self.is_emergency,
+                amenities=amenities
             )
 
         # 4. Multi-pass Hard Circle-Circle Non-Penetration Constraint Solver (PBD)
