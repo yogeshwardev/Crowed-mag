@@ -395,21 +395,21 @@ export const ProceduralVenue: React.FC<ProceduralVenueProps> = ({
         venueLength={length}
       />
 
-      {/* 8. 3D CCTV Security Camera Mounting Posts */}
+      {/* 8. 3D CCTV Security Camera Mounting Posts (Perimeter Corners & Floodlight Masts) */}
       {[
-        { x: width * 0.2 + offsetX, z: length * 0.18 + offsetZ, rot: Math.PI / 4, label: 'CAM-01' },
-        { x: width * 0.5 + offsetX, z: length * 0.5 + offsetZ, rot: 0, label: 'CAM-02' },
-        { x: width * 0.82 + offsetX, z: length * 0.5 + offsetZ, rot: -Math.PI / 2, label: 'CAM-03' },
-        { x: width * 0.5 + offsetX, z: length * 0.88 + offsetZ, rot: Math.PI, label: 'CAM-04' },
+        { x: width * 0.05 + offsetX, z: length * 0.06 + offsetZ, rot: Math.PI / 4, label: 'CAM-01' },
+        { x: width * 0.95 + offsetX, z: length * 0.06 + offsetZ, rot: -Math.PI / 4, label: 'CAM-02' },
+        { x: width * 0.95 + offsetX, z: length * 0.94 + offsetZ, rot: -3 * Math.PI / 4, label: 'CAM-03' },
+        { x: width * 0.05 + offsetX, z: length * 0.94 + offsetZ, rot: 3 * Math.PI / 4, label: 'CAM-04' },
       ].map((cam, cIdx) => (
         <group key={`cctv_post_${cIdx}`} position={[cam.x, 0, cam.z]}>
-          {/* Mast */}
-          <mesh position={[0, 4.0, 0]}>
-            <cylinderGeometry args={[0.08, 0.12, 8.0, 8]} />
-            <meshStandardMaterial color="#475569" metalness={0.8} roughness={0.3} />
+          {/* High Perimeter Mast */}
+          <mesh position={[0, 5.0, 0]}>
+            <cylinderGeometry args={[0.1, 0.16, 10.0, 8]} />
+            <meshStandardMaterial color="#334155" metalness={0.8} roughness={0.3} />
           </mesh>
           {/* Camera Arm & Housing */}
-          <group position={[0, 7.8, 0]} rotation={[0.2, cam.rot, 0]}>
+          <group position={[0, 9.8, 0]} rotation={[0.3, cam.rot, 0]}>
             <mesh position={[0, 0, 0.35]}>
               <boxGeometry args={[0.22, 0.22, 0.65]} />
               <meshStandardMaterial color="#ffffff" roughness={0.2} metalness={0.7} />
