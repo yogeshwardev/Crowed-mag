@@ -60,7 +60,7 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'analytics_reports', label: 'Analytics', short: 'Reports', icon: <BarChart3 className="w-3.5 h-3.5" /> },
   ];
 
-  const speedOptions = [1, 2, 2.5, 3];
+  const speedOptions = [1, 1.5, 2, 2.5, 3];
 
   return (
     <header className={`bg-[#090e1a]/95 border-b backdrop-blur-md flex flex-col z-30 shrink-0 select-none transition-colors ${

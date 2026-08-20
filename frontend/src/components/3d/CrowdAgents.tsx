@@ -208,7 +208,7 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
         if (inFireProximity) {
           // Direct radial sprint away from the fire epicenter
           const fleeMag = Math.hypot(fleeDirX, fleeDirY) + 1e-5;
-          const sprintSpd = 4.2 + (i % 6) * 0.25;
+          const sprintSpd = 2.8 + (i % 5) * 0.15;
           desiredVx = (fleeDirX / fleeMag) * sprintSpd;
           desiredVy = (fleeDirY / fleeMag) * sprintSpd;
         } else {
@@ -226,15 +226,15 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
           // If reached exit gate, step through and continue outward egress
           if (bestDist < 3.5 || cached.isExiting) {
             cached.isExiting = true;
-            cached.egressDist += dt * 3.5;
+            cached.egressDist += dt * 2.4;
 
             // Outward vector away from venue center
             const outwardX = bestExit.x - (venueWidth / 2);
             const outwardY = bestExit.y - (venueLength / 2);
             const outMag = Math.hypot(outwardX, outwardY) + 1e-5;
 
-            desiredVx = (outwardX / outMag) * 3.2;
-            desiredVy = (outwardY / outMag) * 3.2;
+            desiredVx = (outwardX / outMag) * 2.2;
+            desiredVy = (outwardY / outMag) * 2.2;
 
             // Only mark safe after dispersing 18m beyond the exit
             if (cached.egressDist > 18.0) {
@@ -249,22 +249,22 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
             const d = Math.hypot(dx, dy) + 1e-5;
 
             // Bottleneck Arching: naturally slow down at dense doorway choke points
-            const bottleneckSpeed = bestDist < 8.0 ? Math.max(1.8, 3.8 * (bestDist / 8.0)) : (3.8 + (i % 5) * 0.25);
+            const bottleneckSpeed = bestDist < 8.0 ? Math.max(1.4, 2.6 * (bestDist / 8.0)) : (2.6 + (i % 5) * 0.15);
             desiredVx = (dx / d) * bottleneckSpeed;
             desiredVy = (dy / d) * bottleneckSpeed;
           }
         }
 
         // Realistic acceleration with body inertia (takes ~1s to reach top sprint)
-        cached.vx = THREE.MathUtils.lerp(cached.vx, desiredVx, Math.min(1.0, dt * 5.0));
-        cached.vy = THREE.MathUtils.lerp(cached.vy, desiredVy, Math.min(1.0, dt * 5.0));
+        cached.vx = THREE.MathUtils.lerp(cached.vx, desiredVx, Math.min(1.0, dt * 3.5));
+        cached.vy = THREE.MathUtils.lerp(cached.vy, desiredVy, Math.min(1.0, dt * 3.5));
       } else {
         // --- NORMAL REAL-TIME PEDESTRIAN CIRCULATION & WANDERING ---
         cached.wanderTimer -= dt;
         const distToTarget = Math.hypot(cached.targetX - cached.x, cached.targetY - cached.y);
 
         if (distToTarget < 2.5 || cached.wanderTimer <= 0) {
-          cached.wanderTimer = 5.0 + Math.random() * 12.0;
+          cached.wanderTimer = 6.0 + Math.random() * 12.0;
           cached.targetX = 8.0 + Math.random() * (venueWidth - 16.0);
           cached.targetY = 8.0 + Math.random() * (venueLength - 16.0);
         }
@@ -272,13 +272,13 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
         const dx = cached.targetX - cached.x;
         const dy = cached.targetY - cached.y;
         const d = Math.hypot(dx, dy) + 1e-5;
-        const walkSpeed = 1.3 + (i % 4) * 0.15;
+        const walkSpeed = 0.95 + (i % 4) * 0.08;
 
         const desiredVx = (dx / d) * walkSpeed;
         const desiredVy = (dy / d) * walkSpeed;
 
-        cached.vx = THREE.MathUtils.lerp(cached.vx, desiredVx, Math.min(1.0, dt * 3.5));
-        cached.vy = THREE.MathUtils.lerp(cached.vy, desiredVy, Math.min(1.0, dt * 3.5));
+        cached.vx = THREE.MathUtils.lerp(cached.vx, desiredVx, Math.min(1.0, dt * 2.5));
+        cached.vy = THREE.MathUtils.lerp(cached.vy, desiredVy, Math.min(1.0, dt * 2.5));
       }
 
       // Integrate position
@@ -302,7 +302,7 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
         let diff = targetAngle - cached.angle;
         while (diff < -Math.PI) diff += Math.PI * 2;
         while (diff > Math.PI) diff -= Math.PI * 2;
-        cached.angle += diff * Math.min(1.0, dt * 10.0);
+        cached.angle += diff * Math.min(1.0, dt * 8.0);
       }
 
       const worldX = cached.x + offsetX;
@@ -346,10 +346,10 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
         continue;
       }
 
-      // Dynamic Stride Cadence & Gait Kinematics
+      // Dynamic Stride Cadence & Gait Kinematics (Natural human locomotion)
       const cadence = isRunning
-        ? 15.5
-        : (isMoving ? Math.max(5.0, actualSpeed * 7.5) : 0);
+        ? 7.8
+        : (isMoving ? Math.max(3.2, actualSpeed * 4.2) : 0);
 
       if (isMoving) {
         cached.stridePhase += dt * cadence;
@@ -357,20 +357,20 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
 
       const stride = isMoving ? Math.sin(cached.stridePhase) : 0;
       const strideCos = isMoving ? Math.cos(cached.stridePhase) : 1;
-      const animAmp = isRunning ? 0.85 : 0.48;
+      const animAmp = isRunning ? 0.62 : 0.36;
 
       // Realistic vertical bounce & lateral sway
       const bodyBounce = isMoving
-        ? Math.abs(stride) * (isRunning ? 0.08 : 0.035)
-        : Math.sin(time * 2.2 + i * 0.8) * 0.012; // Natural breathing when idle
+        ? Math.abs(stride) * (isRunning ? 0.05 : 0.02)
+        : Math.sin(time * 1.8 + i * 0.8) * 0.008; // Natural breathing when idle
 
-      const lateralSway = isMoving ? strideCos * (isRunning ? 0.06 : 0.03) : 0;
+      const lateralSway = isMoving ? strideCos * (isRunning ? 0.04 : 0.02) : 0;
       const forwardLean = isRunning
-        ? 0.28
-        : (hasSmoke ? 0.35 : Math.min(0.12, actualSpeed * 0.08));
+        ? 0.22
+        : (hasSmoke ? 0.30 : Math.min(0.08, actualSpeed * 0.06));
 
       const idleGlance = !isMoving
-        ? Math.sin(time * 0.45 + i * 1.5) * 0.22
+        ? Math.sin(time * 0.45 + i * 1.5) * 0.18
         : 0;
 
       // 1. Torso
