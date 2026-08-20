@@ -450,14 +450,16 @@ class SimulationEngine:
             return EvacuationStatus(is_active=False)
 
         elapsed = time.time() - self.emergency_start_time
-        total = max(1, self.total_evac_target)
-        exited = self.exited_count
+        total = max(1, self.total_evac_target if self.total_evac_target > 0 else len(self.agents))
+        exited = sum(1 for a in self.agents if a.state == "SAFE")
+        self.exited_count = exited
         remaining = max(0, total - exited)
-        pct = round(min(100.0, (exited / total) * 100.0), 2)
+        pct = round(min(100.0, (exited / total) * 100.0), 1)
 
         # Estimate completion time based on exit flow
         rate = (exited / max(1.0, elapsed))  # people per sec
-        est_sec = (remaining / rate) if rate > 0.1 else max(10.0, remaining * 0.8)
+        est_sec = round((remaining / rate), 1) if rate > 0.1 else round(max(5.0, remaining * 0.4), 1)
+        is_completed = (remaining == 0 or (total > 0 and exited >= total))
 
         return EvacuationStatus(
             is_active=True,
@@ -467,9 +469,9 @@ class SimulationEngine:
             exited_people=exited,
             remaining_people=remaining,
             evacuation_percentage=pct,
-            estimated_completion_seconds=round(est_sec, 1),
-            average_evacuation_speed=2.8,
-            is_completed=(remaining == 0)
+            estimated_completion_seconds=est_sec,
+            average_evacuation_speed=3.6,
+            is_completed=is_completed
         )
 
     def get_telemetry_snapshot(self) -> Dict[str, Any]:

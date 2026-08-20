@@ -117,26 +117,38 @@ export const App: React.FC = () => {
 
   // Emergency triggers
   const handleTriggerFire = async (x: number, y: number) => {
+    const totalCount = telemetry?.total_agent_count || telemetry?.active_agent_count || 800;
     // 1. Instant optimistic local state update for zero-latency UI reaction
     if (telemetry) {
       setTelemetry({
         ...telemetry,
         is_emergency: true,
         emergency_scenario: 'fire',
-        danger_zones: [{ x, y, radius: 15.0 }]
+        danger_zones: [{ x, y, radius: 15.0 }],
+        evacuation: {
+          is_active: true,
+          scenario_type: 'fire',
+          elapsed_seconds: 0,
+          total_people: totalCount,
+          exited_people: 0,
+          remaining_people: totalCount,
+          evacuation_percentage: 0,
+          estimated_completion_seconds: 45,
+          average_evacuation_speed: 3.8,
+          is_completed: false
+        }
       });
     }
 
     // 2. Send via WebSocket if active
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       try {
-        socketRef.current.send(JSON.stringify({
-          action: 'EMERGENCY_TRIGGER',
+        socketRef.current.send('EMERGENCY_TRIGGER', {
           scenario: 'fire',
           x,
           y,
           radius: 15.0
-        }));
+        });
       } catch (e) {}
     }
 
@@ -154,6 +166,37 @@ export const App: React.FC = () => {
   };
 
   const handleTriggerStampede = async () => {
+    const totalCount = telemetry?.total_agent_count || telemetry?.active_agent_count || 800;
+    if (telemetry) {
+      setTelemetry({
+        ...telemetry,
+        is_emergency: true,
+        emergency_scenario: 'stampede',
+        danger_zones: [{ x: currentBlueprint.width / 2, y: currentBlueprint.length / 2, radius: 20.0 }],
+        evacuation: {
+          is_active: true,
+          scenario_type: 'stampede',
+          elapsed_seconds: 0,
+          total_people: totalCount,
+          exited_people: 0,
+          remaining_people: totalCount,
+          evacuation_percentage: 0,
+          estimated_completion_seconds: 45,
+          average_evacuation_speed: 3.8,
+          is_completed: false
+        }
+      });
+    }
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      try {
+        socketRef.current.send('EMERGENCY_TRIGGER', {
+          scenario: 'stampede',
+          x: currentBlueprint.width / 2,
+          y: currentBlueprint.length / 2,
+          radius: 20.0
+        });
+      } catch (e) {}
+    }
     try {
       await api.triggerEmergency({
         scenario_type: 'stampede',
@@ -161,16 +204,30 @@ export const App: React.FC = () => {
         location_y: currentBlueprint.length / 2,
         radius: 20.0
       });
-    } catch (err) {
-      if (telemetry) {
-        setTelemetry({
-          ...telemetry,
-          is_emergency: true,
-          emergency_scenario: 'stampede',
-          danger_zones: [{ x: currentBlueprint.width / 2, y: currentBlueprint.length / 2, radius: 20.0 }]
-        });
-      }
-    }
+    } catch (err) {}
+  };
+
+  const handleEvacuationProgress = (stats: { exited: number; total: number; remaining: number; pct: number }) => {
+    setTelemetry((prev) => {
+      if (!prev || !prev.is_emergency) return prev;
+      const isComp = stats.remaining === 0 || stats.pct >= 100;
+      return {
+        ...prev,
+        active_agent_count: stats.remaining,
+        evacuation: {
+          is_active: true,
+          scenario_type: prev.emergency_scenario || 'evacuation',
+          elapsed_seconds: Number(((prev.evacuation?.elapsed_seconds || 0) + 0.3).toFixed(1)),
+          total_people: stats.total,
+          exited_people: stats.exited,
+          remaining_people: stats.remaining,
+          evacuation_percentage: stats.pct,
+          estimated_completion_seconds: isComp ? 0 : Math.max(3, Math.round(stats.remaining * 0.35)),
+          average_evacuation_speed: 3.8,
+          is_completed: isComp
+        }
+      };
+    });
   };
 
   const handleClearEmergency = async () => {
@@ -183,7 +240,18 @@ export const App: React.FC = () => {
         is_emergency: false,
         emergency_scenario: undefined,
         danger_zones: [],
-        blocked_exits: []
+        blocked_exits: [],
+        evacuation: {
+          is_active: false,
+          elapsed_seconds: 0,
+          total_people: 0,
+          exited_people: 0,
+          remaining_people: 0,
+          evacuation_percentage: 0,
+          estimated_completion_seconds: 0,
+          average_evacuation_speed: 0,
+          is_completed: false
+        }
       });
     }
   };
@@ -265,6 +333,7 @@ export const App: React.FC = () => {
             telemetry={telemetry}
             simSpeed={simSpeed}
             onSetSpeed={handleSetSpeed}
+            onEvacuationProgress={handleEvacuationProgress}
             onTriggerFire={handleTriggerFire}
             onTriggerStampede={handleTriggerStampede}
             onClearEmergency={handleClearEmergency}

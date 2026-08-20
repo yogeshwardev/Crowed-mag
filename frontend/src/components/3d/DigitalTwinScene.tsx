@@ -35,6 +35,7 @@ interface DigitalTwinSceneProps {
   telemetry: TelemetrySnapshot | null;
   simSpeed?: number;
   onSetSpeed?: (speed: number) => void;
+  onEvacuationProgress?: (stats: { exited: number; total: number; remaining: number; pct: number }) => void;
   onTriggerFire?: (x: number, y: number) => void;
   onTriggerStampede?: () => void;
   onClearEmergency?: () => void;
@@ -46,6 +47,7 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
   telemetry,
   simSpeed = 1.0,
   onSetSpeed,
+  onEvacuationProgress,
   onTriggerFire,
   onTriggerStampede,
   onClearEmergency,
@@ -188,6 +190,7 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
             dangerZones={dangerZones}
             elements={blueprint.elements}
             speedMultiplier={simSpeed}
+            onEvacuationProgress={onEvacuationProgress}
           />
         )}
 

@@ -11,6 +11,7 @@ interface CrowdAgentsProps {
   dangerZones?: Array<{ x: number; y: number; radius: number }>;
   elements?: BlueprintElement[];
   speedMultiplier?: number;
+  onEvacuationProgress?: (stats: { exited: number; total: number; remaining: number; pct: number }) => void;
 }
 
 const CLOTHING_COLORS = [
@@ -42,7 +43,9 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
   dangerZones = [],
   elements = [],
   speedMultiplier = 1.0,
+  onEvacuationProgress,
 }) => {
+  const lastProgressReport = useRef<number>(0);
   const torsoMeshRef = useRef<THREE.InstancedMesh>(null);
   const headMeshRef = useRef<THREE.InstancedMesh>(null);
   const leftLegMeshRef = useRef<THREE.InstancedMesh>(null);
@@ -457,6 +460,22 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
       headMeshRef.current.setColorAt(i, skin);
       leftArmMeshRef.current.setColorAt(i, skin);
       rightArmMeshRef.current.setColorAt(i, skin);
+    }
+
+    if (isEmergency && onEvacuationProgress && count > 0) {
+      lastProgressReport.current += dt;
+      if (lastProgressReport.current > 0.3) {
+        lastProgressReport.current = 0;
+        let safeCount = 0;
+        kinematicCache.current.forEach((val) => {
+          if (val.isSafe) safeCount++;
+        });
+        const total = count;
+        const exited = Math.min(total, safeCount);
+        const remaining = Math.max(0, total - exited);
+        const pct = Math.round((exited / total) * 100);
+        onEvacuationProgress({ exited, total, remaining, pct });
+      }
     }
 
     torsoMeshRef.current.instanceMatrix.needsUpdate = true;

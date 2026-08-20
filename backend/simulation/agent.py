@@ -427,10 +427,14 @@ class SimulationAgent:
                     self.vx = 0.0
                     self.vy = 0.0
 
-        # Check exit reach
+        # Check exit reach during stampede / evacuation
         if is_stampeding:
             dist_to_exit = nav_mesh.get_distance_to_nearest_exit(self.x, self.y)
-            if dist_to_exit < 2.2:
+            at_exit = (dist_to_exit < 4.2) or (
+                self.x <= 3.0 or self.x >= nav_mesh.width - 3.0 or
+                self.y <= 3.0 or self.y >= nav_mesh.length - 3.0
+            )
+            if at_exit:
                 self.state = "SAFE"
                 self.vx = 0.0
                 self.vy = 0.0

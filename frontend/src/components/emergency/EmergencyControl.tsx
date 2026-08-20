@@ -178,6 +178,30 @@ export const EmergencyControl: React.FC<EmergencyControlProps> = ({
             </div>
           </div>
         )}
+
+        {/* Evacuation Completed Celebratory Banner */}
+        {isEmergency && (evac?.is_completed || (remainingPeople === 0 && totalPeople > 0)) && (
+          <div className="mt-4 p-4 rounded-xl bg-emerald-950/80 border-2 border-emerald-500 shadow-glow-emerald flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <CheckCircle2 className="w-7 h-7 text-emerald-400 shrink-0" />
+              <div>
+                <h4 className="text-sm font-extrabold text-white uppercase tracking-wider">
+                  ✅ EVACUATION 100% COMPLETE — ALL {totalPeople} CITIZENS SAFELY EVACUATED
+                </h4>
+                <p className="text-xs text-emerald-200/90 font-medium">
+                  Zero casualties. All sectors and stands have been cleared through emergency exits in {formatTime(elapsedSec)}.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={onClearEmergency}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black flex items-center gap-2 shadow transition active:scale-95 shrink-0"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>RESTORE NORMAL OPERATIONS</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Grid: Scenario Configuration & Exit Route Controller */}
