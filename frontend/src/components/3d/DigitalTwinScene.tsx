@@ -509,8 +509,11 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
         <div className="pointer-events-auto flex items-center gap-2">
           {isEmergency ? (
             <button
-              onClick={onClearEmergency}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-glow-green transition active:scale-95"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClearEmergency();
+              }}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-glow-green transition active:scale-95 cursor-pointer relative z-30 pointer-events-auto"
             >
               <RotateCcw className="w-4 h-4" />
               <span>CLEAR EMERGENCY & RESTORE FLOW</span>

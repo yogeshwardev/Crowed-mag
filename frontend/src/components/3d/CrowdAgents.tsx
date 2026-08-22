@@ -163,7 +163,20 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
         cached.y = THREE.MathUtils.lerp(cached.y, a.y, Math.min(1.0, dt * 6.0));
       }
 
-      // Only hide after walking far beyond the exit gates (dist > 18m)
+      // Reset safe/exited state and re-populate when emergency is cleared
+      if (!isEmergency && dangerZones.length === 0 && (cached.isSafe || cached.isExiting)) {
+        cached.isSafe = false;
+        cached.isExiting = false;
+        cached.egressDist = 0;
+        cached.x = 8.0 + Math.random() * (venueWidth - 16.0);
+        cached.y = 8.0 + Math.random() * (venueLength - 16.0);
+        cached.targetX = 8.0 + Math.random() * (venueWidth - 16.0);
+        cached.targetY = 8.0 + Math.random() * (venueLength - 16.0);
+        cached.wanderTimer = 3.0 + Math.random() * 8.0;
+        a.state = 'WALKING';
+      }
+
+      // Only hide after walking far beyond the exit gates (dist > 18m) during active emergencies
       if (cached.isSafe) {
         dummy.position.set(0, -100, 0);
         dummy.scale.set(0, 0, 0);

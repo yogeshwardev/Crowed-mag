@@ -286,29 +286,50 @@ export const App: React.FC = () => {
   };
 
   const handleClearEmergency = async () => {
+    const crowdCount = telemetry?.total_agent_count || 800;
+    const restored = generateInitialTelemetry(currentBlueprint, crowdCount);
+    
+    // 1. Instant optimistic state restoration
+    setTelemetry({
+      ...restored,
+      is_emergency: false,
+      emergency_scenario: undefined,
+      danger_zones: [],
+      blocked_exits: [],
+      power_grid: {
+        is_blackout: false,
+        backup_generator_active: false,
+        emergency_lights_active: false,
+        drones_deployed: true,
+        cctv_grid_powered: true
+      },
+      evacuation: {
+        is_active: false,
+        elapsed_seconds: 0,
+        total_people: crowdCount,
+        exited_people: 0,
+        remaining_people: crowdCount,
+        evacuation_percentage: 0,
+        estimated_completion_seconds: 0,
+        average_evacuation_speed: 0,
+        is_completed: false
+      }
+    });
+
+    // 2. Broadcast clear via WebSocket
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      try {
+        socketRef.current.send('EMERGENCY_CLEAR', {});
+      } catch (e) {}
+    }
+
+    // 3. Clear via REST API
     try {
       await api.clearEmergency();
     } catch (err) {}
-    if (telemetry) {
-      setTelemetry({
-        ...telemetry,
-        is_emergency: false,
-        emergency_scenario: undefined,
-        danger_zones: [],
-        blocked_exits: [],
-        evacuation: {
-          is_active: false,
-          elapsed_seconds: 0,
-          total_people: 0,
-          exited_people: 0,
-          remaining_people: 0,
-          evacuation_percentage: 0,
-          estimated_completion_seconds: 0,
-          average_evacuation_speed: 0,
-          is_completed: false
-        }
-      });
-    }
+    try {
+      await api.extinguishFire();
+    } catch (err) {}
   };
 
   const handleBlockExit = async (exitId: string) => {
