@@ -333,27 +333,51 @@ export const App: React.FC = () => {
   };
 
   const handleBlockExit = async (exitId: string) => {
+    // 1. Instant optimistic state update
+    if (telemetry) {
+      const current = telemetry.blocked_exits || [];
+      if (!current.includes(exitId)) {
+        setTelemetry({
+          ...telemetry,
+          blocked_exits: [...current, exitId]
+        });
+      }
+    }
+
+    // 2. Broadcast via WebSocket
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      try {
+        socketRef.current.send('BLOCK_EXIT', { exit_id: exitId });
+      } catch (e) {}
+    }
+
+    // 3. REST API call
     try {
       await api.blockExit(exitId);
     } catch (err) {}
-    if (telemetry) {
-      setTelemetry({
-        ...telemetry,
-        blocked_exits: [...telemetry.blocked_exits, exitId]
-      });
-    }
   };
 
   const handleUnblockExit = async (exitId: string) => {
+    // 1. Instant optimistic state update
+    if (telemetry) {
+      const current = telemetry.blocked_exits || [];
+      setTelemetry({
+        ...telemetry,
+        blocked_exits: current.filter(id => id !== exitId)
+      });
+    }
+
+    // 2. Broadcast via WebSocket
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      try {
+        socketRef.current.send('UNBLOCK_EXIT', { exit_id: exitId });
+      } catch (e) {}
+    }
+
+    // 3. REST API call
     try {
       await api.unblockExit(exitId);
     } catch (err) {}
-    if (telemetry) {
-      setTelemetry({
-        ...telemetry,
-        blocked_exits: telemetry.blocked_exits.filter(id => id !== exitId)
-      });
-    }
   };
 
   const handleSetCrowdSize = async (count: number) => {

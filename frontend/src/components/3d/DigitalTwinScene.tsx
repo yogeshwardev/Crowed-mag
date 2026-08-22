@@ -234,6 +234,7 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
             venueLength={blueprint.length}
             isEmergency={isEmergency}
             dangerZones={dangerZones}
+            blockedExits={blockedExits}
             elements={blueprint.elements}
             speedMultiplier={simSpeed}
             onEvacuationProgress={onEvacuationProgress}

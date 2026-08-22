@@ -9,6 +9,7 @@ interface CrowdAgentsProps {
   venueLength: number;
   isEmergency: boolean;
   dangerZones?: Array<{ x: number; y: number; radius: number }>;
+  blockedExits?: string[];
   elements?: BlueprintElement[];
   speedMultiplier?: number;
   onEvacuationProgress?: (stats: { exited: number; total: number; remaining: number; pct: number }) => void;
@@ -41,6 +42,7 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
   venueLength,
   isEmergency,
   dangerZones = [],
+  blockedExits = [],
   elements = [],
   speedMultiplier = 1.0,
   onEvacuationProgress,
@@ -82,15 +84,15 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
   const exits = useMemo(() => {
     const list = elements
       .filter((el) => el.type === 'exit_gate' || el.type === 'emergency_exit')
-      .map((el) => ({ x: el.x, y: el.y, width: el.width || 4.0 }));
+      .map((el) => ({ id: el.id, x: el.x, y: el.y, width: el.width || 4.0 }));
 
     if (list.length === 0) {
       // Default perimeter exits if none in blueprint
       return [
-        { x: 3, y: venueLength / 2, width: 6.0 },
-        { x: venueWidth - 3, y: venueLength / 2, width: 6.0 },
-        { x: venueWidth / 2, y: 3, width: 6.0 },
-        { x: venueWidth / 2, y: venueLength - 3, width: 6.0 },
+        { id: 'def_exit_w', x: 3, y: venueLength / 2, width: 6.0 },
+        { id: 'def_exit_e', x: venueWidth - 3, y: venueLength / 2, width: 6.0 },
+        { id: 'def_exit_n', x: venueWidth / 2, y: 3, width: 6.0 },
+        { id: 'def_exit_s', x: venueWidth / 2, y: venueLength - 3, width: 6.0 },
       ];
     }
     return list;
@@ -226,9 +228,11 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
           desiredVy = (fleeDirY / fleeMag) * sprintSpd;
         } else {
           // Find nearest unblocked exit gate
-          let bestExit = exits[0];
+          const availableExits = exits.filter(e => !(blockedExits || []).includes(e.id));
+          const candidateExits = availableExits.length > 0 ? availableExits : exits;
+          let bestExit = candidateExits[0] || exits[0];
           let bestDist = 9999;
-          for (const ex of exits) {
+          for (const ex of candidateExits) {
             const dist = Math.hypot(ex.x - cached.x, ex.y - cached.y);
             if (dist < bestDist) {
               bestDist = dist;

@@ -213,14 +213,20 @@ def clear_emergency():
     return {"status": "EMERGENCY_CLEARED"}
 
 @app.post("/api/emergency/block_exit")
-def block_exit(exit_id: str):
-    sim_engine.block_exit(exit_id)
-    return {"status": "EXIT_BLOCKED", "exit_id": exit_id}
+@app.post("/api/emergency/block-exit")
+def block_exit(exit_id: Optional[str] = None, data: Optional[Dict[str, Any]] = None):
+    target_id = exit_id or (data.get("exit_id") if data else None)
+    if target_id:
+        sim_engine.block_exit(target_id)
+    return {"status": "EXIT_BLOCKED", "exit_id": target_id}
 
 @app.post("/api/emergency/unblock_exit")
-def unblock_exit(exit_id: str):
-    sim_engine.unblock_exit(exit_id)
-    return {"status": "EXIT_UNBLOCKED", "exit_id": exit_id}
+@app.post("/api/emergency/unblock-exit")
+def unblock_exit(exit_id: Optional[str] = None, data: Optional[Dict[str, Any]] = None):
+    target_id = exit_id or (data.get("exit_id") if data else None)
+    if target_id:
+        sim_engine.unblock_exit(target_id)
+    return {"status": "EXIT_UNBLOCKED", "exit_id": target_id}
 
 # ================= AI SAFETY & PREDICTION =================
 @app.get("/api/ai/risk", response_model=AIRiskAnalysis)
@@ -352,6 +358,14 @@ async def websocket_simulation_endpoint(websocket: WebSocket):
                     )
                 elif action == "EMERGENCY_CLEAR":
                     sim_engine.clear_emergency()
+                elif action == "BLOCK_EXIT":
+                    exit_id = data.get("exit_id")
+                    if exit_id:
+                        sim_engine.block_exit(exit_id)
+                elif action == "UNBLOCK_EXIT":
+                    exit_id = data.get("exit_id")
+                    if exit_id:
+                        sim_engine.unblock_exit(exit_id)
                 elif action == "SET_SPEED":
                     sim_engine.speed_multiplier = float(data.get("speed", 1.0))
                 elif action == "SET_CROWD":
