@@ -29,6 +29,8 @@ import { CrowdAgents } from './CrowdAgents';
 import { DensityHeatmap } from './DensityHeatmap';
 import { FlowVisualizer } from './FlowVisualizer';
 import { CameraManager } from './CameraManager';
+import { DroneFleet } from './DroneFleet';
+import { DroneTacticalHUD } from './DroneTacticalHUD';
 
 interface DigitalTwinSceneProps {
   blueprint: Blueprint;
@@ -38,6 +40,7 @@ interface DigitalTwinSceneProps {
   onEvacuationProgress?: (stats: { exited: number; total: number; remaining: number; pct: number }) => void;
   onTriggerFire?: (x: number, y: number) => void;
   onTriggerStampede?: () => void;
+  onTriggerBlackout?: () => void;
   onClearEmergency?: () => void;
   onToggleBlockExit?: (exitId: string) => void;
 }
@@ -50,6 +53,7 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
   onEvacuationProgress,
   onTriggerFire,
   onTriggerStampede,
+  onTriggerBlackout,
   onClearEmergency,
   onToggleBlockExit,
 }) => {
@@ -61,8 +65,11 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
   const [fireCursor, setFireCursor] = useState<{ x: number; z: number } | null>(null);
 
   const orbitControlsRef = useRef<OrbitControlsImpl>(null);
+  const drone1PosRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 26, 0));
+  const drone2PosRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 28, 0));
 
   const isEmergency = telemetry?.is_emergency ?? false;
+  const isBlackout = Boolean(telemetry?.power_grid?.is_blackout || telemetry?.emergency_scenario === 'blackout');
   const agents = telemetry?.agents ?? [];
   const densityGrid = telemetry?.density_grid ?? [];
   const dangerZones = telemetry?.danger_zones ?? [];
@@ -73,6 +80,17 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
 
   return (
     <div className="relative w-full h-full bg-[#050810] overflow-hidden select-none">
+      {/* Drone FPV Tactical HUD Overlay when in Drone camera mode */}
+      {(cameraMode === 'drone_01' || cameraMode === 'drone_02') && (
+        <DroneTacticalHUD
+          droneId={cameraMode}
+          drones={telemetry?.drones}
+          isBlackout={isBlackout}
+          onExitDroneView={() => setCameraMode('overview')}
+          onToggleBlackout={onTriggerBlackout}
+        />
+      )}
+
       {/* 3D WebGL Canvas (Optimized for 60 FPS) */}
       <Canvas
         shadows
@@ -81,15 +99,16 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
         camera={{ position: [0, 75, 85], fov: 45 }}
         className={`w-full h-full ${isPlacingFire ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`}
       >
-        <color attach="background" args={['#070b14']} />
-        <fog attach="fog" args={['#070b14', 60, 220]} />
+        <color attach="background" args={[isBlackout ? '#020408' : '#070b14']} />
+        <fog attach="fog" args={[isBlackout ? '#020408' : '#070b14', isBlackout ? 35 : 60, isBlackout ? 180 : 220]} />
 
-        {/* Studio Lighting */}
-        <ambientLight intensity={0.7} />
+        {/* Dynamic Stadium & Emergency Blackout Lighting */}
+        <ambientLight intensity={isBlackout ? 0.08 : 0.7} color={isBlackout ? '#0f172a' : '#ffffff'} />
         <directionalLight
           position={[40, 80, 50]}
-          intensity={1.3}
-          castShadow
+          intensity={isBlackout ? 0.05 : 1.3}
+          color={isBlackout ? '#1e293b' : '#ffffff'}
+          castShadow={!isBlackout}
           shadow-mapSize-width={1024}
           shadow-mapSize-height={1024}
           shadow-camera-far={220}
@@ -98,8 +117,33 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
           shadow-camera-top={65}
           shadow-camera-bottom={-65}
         />
-        <pointLight position={[-40, 30, -30]} intensity={0.4} color="#38bdf8" />
-        <pointLight position={[40, 30, 30]} intensity={0.3} color="#818cf8" />
+        {!isBlackout && (
+          <>
+            <pointLight position={[-40, 30, -30]} intensity={0.4} color="#38bdf8" />
+            <pointLight position={[40, 30, 30]} intensity={0.3} color="#818cf8" />
+          </>
+        )}
+
+        {/* Emergency Battery Red Siren Beacons (during Blackout) */}
+        {isBlackout && (
+          <>
+            <pointLight position={[-blueprint.width / 2 + 5, 8, -blueprint.length / 2 + 5]} intensity={3.5} distance={45} color="#ef4444" />
+            <pointLight position={[blueprint.width / 2 - 5, 8, blueprint.length / 2 - 5]} intensity={3.5} distance={45} color="#ef4444" />
+            <pointLight position={[0, 4, -blueprint.length / 2 + 4]} intensity={2.0} distance={30} color="#10b981" />
+            <pointLight position={[0, 4, blueprint.length / 2 - 4]} intensity={2.0} distance={30} color="#10b981" />
+          </>
+        )}
+
+        {/* Autonomous 3D Drone Surveillance Fleet */}
+        <DroneFleet
+          venueWidth={blueprint.width}
+          venueLength={blueprint.length}
+          isBlackout={isBlackout}
+          isEmergency={isEmergency}
+          dangerZones={dangerZones}
+          drone1PosRef={drone1PosRef}
+          drone2PosRef={drone2PosRef}
+        />
 
         {/* Camera Transition Controller */}
         <CameraManager
@@ -107,6 +151,8 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
           venueWidth={blueprint.width}
           venueLength={blueprint.length}
           orbitControlsRef={orbitControlsRef}
+          drone1PosRef={drone1PosRef}
+          drone2PosRef={drone2PosRef}
         />
 
         {/* Orbit Controls (disabled while aiming fire to prevent camera drag intercepting clicks) */}
@@ -286,6 +332,8 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
             { id: 'cctv_02', label: '📹 CAM-2' },
             { id: 'cctv_03', label: '📹 CAM-3' },
             { id: 'cctv_04', label: '📹 CAM-4' },
+            { id: 'drone_01', label: '🚁 DRONE-1 (FLIR)' },
+            { id: 'drone_02', label: '🚁 DRONE-2 (NVG)' },
           ].map((cam) => (
             <button
               key={cam.id}
@@ -470,23 +518,31 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
           ) : (
             <>
               <button
-                onClick={() => onTriggerStampede && onTriggerStampede()}
-                className="px-4 py-2 bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 text-white rounded-xl text-xs font-extrabold flex items-center gap-2 shadow-glow-red transition active:scale-95"
+                onClick={() => onTriggerBlackout && onTriggerBlackout()}
+                className="px-3.5 py-2 bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-glow-cyan transition active:scale-95"
               >
                 <Zap className="w-4 h-4" />
-                <span>⚡ TRIGGER STAMPEDE</span>
+                <span>⚡ POWER CUT</span>
+              </button>
+
+              <button
+                onClick={() => onTriggerStampede && onTriggerStampede()}
+                className="px-3.5 py-2 bg-gradient-to-r from-orange-600 to-rose-600 hover:from-orange-500 hover:to-rose-500 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-glow-red transition active:scale-95"
+              >
+                <ShieldAlert className="w-4 h-4" />
+                <span>🚨 STAMPEDE</span>
               </button>
 
               <button
                 onClick={() => setIsPlacingFire(!isPlacingFire)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition active:scale-95 border ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition active:scale-95 border ${
                   isPlacingFire
                     ? 'bg-rose-600 text-white border-rose-400 shadow-glow-red animate-pulse'
                     : 'bg-rose-950/70 hover:bg-rose-900/80 text-rose-300 border-rose-800/80'
                 }`}
               >
                 <Flame className="w-4 h-4 text-rose-400" />
-                <span>{isPlacingFire ? 'CLICK 3D MAP TO IGNITE FIRE' : 'IGNITE FIRE'}</span>
+                <span>{isPlacingFire ? 'CLICK 3D MAP TO IGNITE' : 'IGNITE FIRE'}</span>
               </button>
             </>
           )}

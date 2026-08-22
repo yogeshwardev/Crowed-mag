@@ -125,6 +125,42 @@ export const CCTVMonitorModal: React.FC<CCTVMonitorModalProps> = ({
       optical_flow_curl: 0.01,
       status: 'NORMAL',
       bounding_boxes: []
+    },
+    {
+      id: 'drone_01',
+      name: 'DRONE-01: Falcon-1 Alpha Aerial FLIR Thermal',
+      x: 60,
+      y: 40,
+      height: 26.0,
+      fov_deg: 85,
+      range: 65,
+      fps: 60,
+      resolution: '4K FLIR',
+      tracked_count: 74,
+      average_speed: 1.42,
+      turbulence_index: 0.52,
+      optical_flow_div: 0.18,
+      optical_flow_curl: 0.08,
+      status: 'AIRBORNE SEARCHLIGHT ACTIVE',
+      bounding_boxes: []
+    },
+    {
+      id: 'drone_02',
+      name: 'DRONE-02: Falcon-2 Bravo Perimeter Night Vision',
+      x: 60,
+      y: 72,
+      height: 28.0,
+      fov_deg: 90,
+      range: 60,
+      fps: 60,
+      resolution: '4K NVG',
+      tracked_count: 48,
+      average_speed: 1.25,
+      turbulence_index: 0.35,
+      optical_flow_div: 0.08,
+      optical_flow_curl: 0.03,
+      status: 'AIRBORNE PATROL',
+      bounding_boxes: []
     }
   ];
 

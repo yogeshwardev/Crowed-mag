@@ -247,8 +247,8 @@ class SimulationEngine:
             self.danger_zones = self.fire_grid.get_danger_zones()
             if not self.danger_zones:
                 self.danger_zones.append({"x": fx, "y": fy, "radius": radius})
-        elif scenario_type in ["stampede", "crowd_surge"]:
-            self.danger_zones.append({"x": fx, "y": fy, "radius": radius})
+        elif scenario_type in ["stampede", "crowd_surge", "blackout", "powercut"]:
+            self.danger_zones.append({"x": fx, "y": fy, "radius": radius, "type": scenario_type})
         elif scenario_type == "exit_blockage" and blocked_exit_id:
             self.blocked_exits.add(blocked_exit_id)
 
@@ -510,5 +510,50 @@ class SimulationEngine:
             "peak_crush_pressure_n": round(peak_crush, 1),
             "fire_state": self.fire_grid.get_state_summary(),
             "vision_analytics": self.last_vision_snapshot,
+            "power_grid": {
+                "is_blackout": self.emergency_scenario in ["blackout", "powercut"],
+                "backup_generator_active": self.emergency_scenario in ["blackout", "powercut"],
+                "emergency_lights_active": self.emergency_scenario in ["blackout", "powercut"],
+                "drones_deployed": True,
+                "cctv_grid_powered": self.emergency_scenario not in ["blackout", "powercut"]
+            },
+            "drones": [
+                {
+                    "id": "drone_01",
+                    "name": "Falcon-1 Alpha (Tactical FLIR)",
+                    "callsign": "FALCON-1",
+                    "x": float(round(self.width * 0.5, 1)),
+                    "y": float(round(self.length * 0.45, 1)),
+                    "altitude": 26.4,
+                    "target_x": float(round(self.width * 0.5, 1)),
+                    "target_y": float(round(self.length * 0.45, 1)),
+                    "speed": 14.2,
+                    "heading": 42,
+                    "battery_pct": 96,
+                    "status": "SEARCHLIGHT_ACTIVE" if self.emergency_scenario in ["blackout", "powercut"] else "PATROLLING",
+                    "mode": "BLACKOUT_SURVEILLANCE" if self.emergency_scenario in ["blackout", "powercut"] else "AUTONOMOUS",
+                    "flir_mode": "THERMAL_WHITE_HOT",
+                    "searchlight_on": True,
+                    "detected_anomalies": []
+                },
+                {
+                    "id": "drone_02",
+                    "name": "Falcon-2 Bravo (Perimeter NVG)",
+                    "callsign": "FALCON-2",
+                    "x": float(round(self.width * 0.75, 1)),
+                    "y": float(round(self.length * 0.65, 1)),
+                    "altitude": 28.0,
+                    "target_x": float(round(self.width * 0.75, 1)),
+                    "target_y": float(round(self.length * 0.65, 1)),
+                    "speed": 11.8,
+                    "heading": 135,
+                    "battery_pct": 92,
+                    "status": "SEARCHLIGHT_ACTIVE" if self.emergency_scenario in ["blackout", "powercut"] else "PATROLLING",
+                    "mode": "BLACKOUT_SURVEILLANCE" if self.emergency_scenario in ["blackout", "powercut"] else "AUTONOMOUS",
+                    "flir_mode": "NIGHT_VISION_NVG",
+                    "searchlight_on": True,
+                    "detected_anomalies": []
+                }
+            ],
             "agents": agent_dicts
         }

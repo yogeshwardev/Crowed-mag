@@ -9,6 +9,8 @@ interface CameraManagerProps {
   venueWidth: number;
   venueLength: number;
   orbitControlsRef: React.RefObject<OrbitControlsImpl>;
+  drone1PosRef?: React.MutableRefObject<THREE.Vector3>;
+  drone2PosRef?: React.MutableRefObject<THREE.Vector3>;
 }
 
 export const CameraManager: React.FC<CameraManagerProps> = ({
@@ -16,6 +18,8 @@ export const CameraManager: React.FC<CameraManagerProps> = ({
   venueWidth,
   venueLength,
   orbitControlsRef,
+  drone1PosRef,
+  drone2PosRef,
 }) => {
   const { camera } = useThree();
   const targetPos = useRef(new THREE.Vector3(0, 75, 85));
@@ -87,10 +91,45 @@ export const CameraManager: React.FC<CameraManagerProps> = ({
         targetPos.current.set(0, 7.0, venueLength * 0.88 - venueLength / 2);
         targetLookAt.current.set(0, 2.0, venueLength * 0.75 - venueLength / 2);
         break;
+
+      case 'drone_01':
+        // Falcon-1 Alpha Drone Overhead FPV
+        if (drone1PosRef?.current) {
+          targetPos.current.set(drone1PosRef.current.x, drone1PosRef.current.y + 1.2, drone1PosRef.current.z + 2.0);
+          targetLookAt.current.set(drone1PosRef.current.x, 0, drone1PosRef.current.z - 10);
+        } else {
+          targetPos.current.set(0, 32, 10);
+          targetLookAt.current.set(0, 0, 0);
+        }
+        break;
+
+      case 'drone_02':
+        // Falcon-2 Bravo Drone Perimeter FPV
+        if (drone2PosRef?.current) {
+          targetPos.current.set(drone2PosRef.current.x, drone2PosRef.current.y + 1.2, drone2PosRef.current.z + 2.0);
+          targetLookAt.current.set(drone2PosRef.current.x, 0, drone2PosRef.current.z - 10);
+        } else {
+          targetPos.current.set(0, 34, 15);
+          targetLookAt.current.set(0, 0, 0);
+        }
+        break;
     }
-  }, [viewMode, venueWidth, venueLength]);
+  }, [viewMode, venueWidth, venueLength, drone1PosRef, drone2PosRef]);
 
   useFrame((_, delta) => {
+    // In Drone FPV modes, continuously track the drone's position in real time
+    if (viewMode === 'drone_01' && drone1PosRef?.current) {
+      const dp = drone1PosRef.current;
+      targetPos.current.set(dp.x, dp.y + 1.2, dp.z + 1.8);
+      targetLookAt.current.set(dp.x, 0, dp.z - 8.0);
+      isTransitioning.current = true;
+    } else if (viewMode === 'drone_02' && drone2PosRef?.current) {
+      const dp = drone2PosRef.current;
+      targetPos.current.set(dp.x, dp.y + 1.2, dp.z + 1.8);
+      targetLookAt.current.set(dp.x, 0, dp.z - 8.0);
+      isTransitioning.current = true;
+    }
+
     // Only interpolate camera when an active transition is in progress
     if (!isTransitioning.current) return;
 
@@ -102,11 +141,13 @@ export const CameraManager: React.FC<CameraManagerProps> = ({
       orbitControlsRef.current.update();
     }
 
-    // Stop transitioning once camera is close to target, allowing free user rotation & orbit
-    const distPos = camera.position.distanceTo(targetPos.current);
-    const distTarget = orbitControlsRef.current ? orbitControlsRef.current.target.distanceTo(targetLookAt.current) : 0;
-    if (distPos < 0.25 && distTarget < 0.25) {
-      isTransitioning.current = false;
+    // Stop transitioning once camera is close to target (unless in continuous drone tracking)
+    if (viewMode !== 'drone_01' && viewMode !== 'drone_02') {
+      const distPos = camera.position.distanceTo(targetPos.current);
+      const distTarget = orbitControlsRef.current ? orbitControlsRef.current.target.distanceTo(targetLookAt.current) : 0;
+      if (distPos < 0.25 && distTarget < 0.25) {
+        isTransitioning.current = false;
+      }
     }
   });
 

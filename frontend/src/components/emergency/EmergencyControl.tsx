@@ -217,10 +217,11 @@ export const EmergencyControl: React.FC<EmergencyControlProps> = ({
             <label className="text-xs font-semibold text-slate-400 block">Incident Scenario Type</label>
             <div className="grid grid-cols-2 gap-2">
               {[
-                { id: 'stampede', name: '⚡ Stampede & Crowd Surge', desc: 'Sudden panic sprint with physical crush forces' },
+                { id: 'stampede', name: '🚨 Stampede & Crowd Surge', desc: 'Sudden panic sprint with physical crush forces' },
                 { id: 'fire', name: '🔥 Fire & Smoke Ignition', desc: 'Localized flame zone with radial repulsion' },
+                { id: 'blackout', name: '⚡ Power Grid Blackout', desc: 'Zero-lux venue darkness; drone searchlight fleet dispatched' },
                 { id: 'crowd_surge', name: '🌊 Inflow Bottleneck Surge', desc: 'Mass influx causing gate compression' },
-                { id: 'exit_blockage', name: '⛔ Sudden Exit Gate Failure', desc: 'Exit blockage forcing crowd rerouting' },
+                { id: 'exit_blockage', name: '⛔ Exit Gate Lock Failure', desc: 'Exit blockage forcing crowd rerouting' },
               ].map(sc => (
                 <button
                   key={sc.id}
@@ -352,6 +353,97 @@ export const EmergencyControl: React.FC<EmergencyControlProps> = ({
                 </div>
               );
             })}
+          </div>
+        </div>
+      </div>
+
+      {/* Row 3: Tactical Autonomous Drone Fleet Surveillance Command */}
+      <div className="bg-[#0e1626]/90 border border-slate-800 rounded-2xl p-6 space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+              <Radio className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">
+                Autonomous Drone Fleet Surveillance & Blackout Searchlight Unit
+              </h3>
+              <p className="text-xs text-slate-400">
+                Automatic aerial deployment for zero-lux blackout inspection, crowd crush detection, and searchlight exit guidance.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5 text-xs font-mono px-3 py-1 rounded-lg bg-cyan-950/80 text-cyan-300 border border-cyan-800">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+              2 DRONES OPERATIONAL
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Drone 1 Card */}
+          <div className="bg-[#070b14]/80 border border-slate-800/80 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="font-bold text-xs text-slate-200">FALCON-1 ALPHA</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">FLIR THERMAL</span>
+              </div>
+              <span className="text-xs font-mono font-bold text-emerald-400">BATTERY: 96%</span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-xs font-mono bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
+              <div>
+                <span className="text-[9px] text-slate-500 block">ALTITUDE</span>
+                <span className="text-cyan-300 font-bold">26.4m AGL</span>
+              </div>
+              <div>
+                <span className="text-[9px] text-slate-500 block">AIRSPEED</span>
+                <span className="text-cyan-300 font-bold">14.2 km/h</span>
+              </div>
+              <div>
+                <span className="text-[9px] text-slate-500 block">SEARCHLIGHT</span>
+                <span className="text-amber-400 font-bold">100% (ACTIVE)</span>
+              </div>
+            </div>
+
+            <div className="text-[11px] text-slate-400 flex items-center justify-between">
+              <span>Mission: Figure-8 Grandstand & Pitch Surveillance</span>
+              <span className="text-cyan-400 font-mono">AUTONOMOUS</span>
+            </div>
+          </div>
+
+          {/* Drone 2 Card */}
+          <div className="bg-[#070b14]/80 border border-slate-800/80 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="font-bold text-xs text-slate-200">FALCON-2 BRAVO</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">NIGHT VISION NVG</span>
+              </div>
+              <span className="text-xs font-mono font-bold text-emerald-400">BATTERY: 92%</span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-xs font-mono bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
+              <div>
+                <span className="text-[9px] text-slate-500 block">ALTITUDE</span>
+                <span className="text-cyan-300 font-bold">28.0m AGL</span>
+              </div>
+              <div>
+                <span className="text-[9px] text-slate-500 block">AIRSPEED</span>
+                <span className="text-cyan-300 font-bold">11.8 km/h</span>
+              </div>
+              <div>
+                <span className="text-[9px] text-slate-500 block">SEARCHLIGHT</span>
+                <span className="text-amber-400 font-bold">100% (ACTIVE)</span>
+              </div>
+            </div>
+
+            <div className="text-[11px] text-slate-400 flex items-center justify-between">
+              <span>Mission: Perimeter Gate & Emergency Egress Sweeps</span>
+              <span className="text-cyan-400 font-mono">AUTONOMOUS</span>
+            </div>
           </div>
         </div>
       </div>

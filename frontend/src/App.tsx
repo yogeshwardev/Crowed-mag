@@ -207,6 +207,61 @@ export const App: React.FC = () => {
     } catch (err) {}
   };
 
+  const handleTriggerBlackout = async () => {
+    const totalCount = telemetry?.total_agent_count || telemetry?.active_agent_count || 800;
+    if (telemetry) {
+      const isCurrentlyBlackout = telemetry.power_grid?.is_blackout || telemetry.emergency_scenario === 'blackout';
+      if (isCurrentlyBlackout) {
+        handleClearEmergency();
+        return;
+      }
+      setTelemetry({
+        ...telemetry,
+        is_emergency: true,
+        emergency_scenario: 'blackout',
+        power_grid: {
+          is_blackout: true,
+          power_cut_time: Date.now(),
+          backup_generator_active: true,
+          emergency_lights_active: true,
+          drones_deployed: true,
+          cctv_grid_powered: false
+        },
+        danger_zones: [{ x: currentBlueprint.width / 2, y: currentBlueprint.length / 2, radius: 25.0, type: 'blackout' }],
+        evacuation: {
+          is_active: true,
+          scenario_type: 'blackout',
+          elapsed_seconds: 0,
+          total_people: totalCount,
+          exited_people: 0,
+          remaining_people: totalCount,
+          evacuation_percentage: 0,
+          estimated_completion_seconds: 60,
+          average_evacuation_speed: 2.6,
+          is_completed: false
+        }
+      });
+    }
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      try {
+        socketRef.current.send('EMERGENCY_TRIGGER', {
+          scenario: 'blackout',
+          x: currentBlueprint.width / 2,
+          y: currentBlueprint.length / 2,
+          radius: 25.0
+        });
+      } catch (e) {}
+    }
+    try {
+      await api.triggerEmergency({
+        scenario_type: 'blackout',
+        location_x: currentBlueprint.width / 2,
+        location_y: currentBlueprint.length / 2,
+        radius: 25.0
+      });
+    } catch (err) {}
+  };
+
   const handleEvacuationProgress = (stats: { exited: number; total: number; remaining: number; pct: number }) => {
     setTelemetry((prev) => {
       if (!prev || !prev.is_emergency) return prev;
@@ -345,6 +400,7 @@ export const App: React.FC = () => {
             onEvacuationProgress={handleEvacuationProgress}
             onTriggerFire={handleTriggerFire}
             onTriggerStampede={handleTriggerStampede}
+            onTriggerBlackout={handleTriggerBlackout}
             onClearEmergency={handleClearEmergency}
             onToggleBlockExit={(id) => telemetry?.blocked_exits?.includes(id) ? handleUnblockExit(id) : handleBlockExit(id)}
           />

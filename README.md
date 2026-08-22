@@ -144,14 +144,19 @@ Unlike traditional static dashboards, CrowdSafe AI combines:
 
 ---
 
-### 6. Emergency Command & Stampede Evacuation Engine
-* **Hazard Scenarios**:
+### 6. Emergency Command, Power Outage & Autonomous Drone Fleet Engine
+* **Hazard & Crisis Scenarios**:
+  * **⚡ Power Grid Failure (Blackout Mode)**: Immediate venue grid cut with zero-lux darkness, emergency exit illumination, and automatic launch of the **Autonomous Tactical Drone Fleet**.
   * **Physical Fire & Smoke**: Point-and-click 3D raycast fire placement or 1-click Quick Ignite.
   * **Panic Stampede**: Sudden surge trigger creating radial repulsion.
   * **Crowd Surge / Crush**: High-density bottleneck compression.
   * **Exit Blockage**: Interactive gate lock/unlock toggles with automatic Dijkstra rerouting.
+* **Autonomous Tactical Drone Fleet (`Falcon-1` & `Falcon-2`)**:
+  * Dual quadcopter drones equipped with spinning 3D propellers, navigation strobes, and **High-Intensity Downward Searchlight Cones**.
+  * **Real-Time FPV & FLIR Thermal HUD**: Switch between White-Hot Thermal, Night Vision (NVG Green), and Ironbow heatmap filters with artificial horizon and live telemetry.
+  * Drones autonomously orbit crowd crush hotspots, sweep perimeter egress gates, and illuminate dark exit routes during blackouts.
 * **Realistic Egress Flow (No Instant Disappearance)**:
-  * Panicked agents sprint outward from fire at $2.8 - 3.4\text{ m/s}$.
+  * Panicked agents sprint outward from danger at $2.8 - 3.4\text{ m/s}$.
   * People funnel through exit gates with doorway bottleneck friction ("faster-is-slower" effect).
   * Occupants walk $18 - 25\text{m}$ onto exterior streets before safely dispersing.
 * **Synchronized Live Evacuation Counter**: Real-time tracking of exited citizens, remaining inside, and completion ETA.

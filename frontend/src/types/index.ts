@@ -186,6 +186,34 @@ export interface VisionAnalytics {
   detection_confidence: number;
 }
 
+export interface DroneData {
+  id: string;
+  name: string;
+  callsign: string;
+  x: number;
+  y: number;
+  altitude: number;
+  target_x: number;
+  target_y: number;
+  speed: number;
+  heading: number;
+  battery_pct: number;
+  status: 'STANDBY' | 'LAUNCHING' | 'PATROLLING' | 'TRACKING_PANIC' | 'SEARCHLIGHT_ACTIVE' | 'RTH';
+  mode: 'AUTONOMOUS' | 'MANUAL_DISPATCH' | 'BLACKOUT_SURVEILLANCE';
+  flir_mode: 'THERMAL_WHITE_HOT' | 'NIGHT_VISION_NVG' | 'FLIR_IRONBOW' | 'OPTICAL';
+  searchlight_on: boolean;
+  detected_anomalies: string[];
+}
+
+export interface PowerGridState {
+  is_blackout: boolean;
+  power_cut_time?: number;
+  backup_generator_active: boolean;
+  emergency_lights_active: boolean;
+  drones_deployed: boolean;
+  cctv_grid_powered: boolean;
+}
+
 export interface TelemetrySnapshot {
   venue_name: string;
   blueprint_id: string;
@@ -193,7 +221,7 @@ export interface TelemetrySnapshot {
   tick: number;
   is_emergency: boolean;
   emergency_scenario?: string;
-  danger_zones: Array<{ x: number; y: number; radius: number; max_temperature?: number; max_smoke?: number }>;
+  danger_zones: Array<{ x: number; y: number; radius: number; max_temperature?: number; max_smoke?: number; type?: string }>;
   blocked_exits: string[];
   capacity: CapacityCalculation;
   evacuation: EvacuationStatus;
@@ -210,6 +238,8 @@ export interface TelemetrySnapshot {
   peak_crush_pressure_n?: number;
   fire_state?: FireState;
   vision_analytics?: VisionAnalytics;
+  power_grid?: PowerGridState;
+  drones?: DroneData[];
 }
 
 export interface RiskFactor {
@@ -284,7 +314,9 @@ export type CameraViewMode =
   | 'cctv_01'
   | 'cctv_02'
   | 'cctv_03'
-  | 'cctv_04';
+  | 'cctv_04'
+  | 'drone_01'
+  | 'drone_02';
 
 export type ViewOverlayMode =
   | '3d'
@@ -293,7 +325,8 @@ export type ViewOverlayMode =
   | 'top'
   | 'flow'
   | 'evacuation'
-  | 'cctv';
+  | 'cctv'
+  | 'drone';
 
 export type NavigationTab =
   | 'digital_twin'
