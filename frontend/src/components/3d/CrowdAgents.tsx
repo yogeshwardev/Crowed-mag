@@ -76,6 +76,11 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
     isSafe: boolean;
     serverLastX?: number;
     serverLastY?: number;
+    assignedExitIndex?: number;
+    panicAngle?: number;
+    disorientationTimer?: number;
+    isFallen?: boolean;
+    fallTimer?: number;
   }>>(new Map());
 
   // Extract exit coordinates
@@ -167,6 +172,9 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
           isSafe: false,
           serverLastX: a.x,
           serverLastY: a.y,
+          assignedExitIndex: i % Math.max(1, exits.length),
+          panicAngle: (i * 2.39996) % (Math.PI * 2), // Full 360-degree multidirectional scatter
+          disorientationTimer: (i % 3 === 0) ? (1.5 + (i % 5) * 0.8) : 0,
         };
         kinematicCache.current.set(a.id, cached);
       }
@@ -181,6 +189,9 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
         cached.targetX = 8.0 + Math.random() * (venueWidth - 16.0);
         cached.targetY = 8.0 + Math.random() * (venueLength - 16.0);
         cached.wanderTimer = 3.0 + Math.random() * 8.0;
+        cached.assignedExitIndex = i % Math.max(1, exits.length);
+        cached.panicAngle = (i * 2.39996) % (Math.PI * 2);
+        cached.disorientationTimer = (i % 3 === 0) ? (1.5 + (i % 5) * 0.8) : 0;
         a.state = 'WALKING';
       }
 
@@ -201,7 +212,7 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
       const isRunning = isEmergency || a.state === 'EVACUATING' || a.state === 'PANIC' || (a.panic_level && a.panic_level > 0.35) || dangerZones.length > 0;
       let isFallen = a.state === 'FALLEN' || a.state === 'STUMBLING';
 
-      // 1. Inter-Agent Physical Contact Forces, Pushing & Crowd Jostling (Social Force + Compression)
+      // 1. Heavy Inter-Agent Physical Contact Forces, Pushing & Crowd Shoving (Social Force + Compression)
       let pushFx = 0;
       let pushFy = 0;
       let localCrowdDensity = 0;
@@ -230,18 +241,18 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
               }
 
               // Physical pushing distance threshold
-              const contactDist = other.state === 'FALLEN' ? 1.2 : 0.76;
+              const contactDist = other.state === 'FALLEN' ? 1.25 : 0.82;
               if (dist > 0.001 && dist < contactDist) {
                 const overlap = contactDist - dist;
-                const pushMag = isRunning ? 9.5 : 4.0;
+                const pushMag = isRunning ? 15.0 : 4.5;
                 pushFx += (dx / dist) * overlap * pushMag;
                 pushFy += (dy / dist) * overlap * pushMag;
 
-                // Lateral jostle eddy in stampede
+                // Lateral jostle eddy in stampede shoving
                 if (isRunning) {
                   const perpX = -dy / dist;
                   const perpY = dx / dist;
-                  const jostle = Math.sin(time * 12.0 + i * 2.1) * overlap * 4.5;
+                  const jostle = Math.sin(time * 14.0 + i * 2.1) * overlap * 6.5;
                   pushFx += perpX * jostle;
                   pushFy += perpY * jostle;
                 }
@@ -253,7 +264,7 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
 
       // Stampede Trip & Fall Mechanics (Stumbling under high crush force)
       if (isRunning && !isFallen && localCrowdDensity >= 4 && Math.hypot(cached.vx, cached.vy) > 2.2) {
-        if (Math.random() < 0.0025 * dt * 60) {
+        if (Math.random() < 0.003 * dt * 60) {
           a.state = 'FALLEN';
           isFallen = true;
           (a as any).fallTimer = 2.8 + Math.random() * 2.0;
@@ -270,87 +281,85 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
         }
       }
 
-      // 2. Realistic Multi-Agent Stampede & Evacuation Dynamics
+      // 2. Realistic Multi-Agent Stampede: Multi-Directional Scattering, Exit Diversity & Pushing
       if (isRunning && !isFallen) {
-        // --- STAMPEDE SURGE & FIRE ESCAPE ---
-        let fleeDirX = 0;
-        let fleeDirY = 0;
-        let inSurgeProximity = false;
+        if (cached.disorientationTimer && cached.disorientationTimer > 0) {
+          cached.disorientationTimer -= dt;
+        }
 
-        // Check distance to all active stampede / fire danger zones
-        for (const dz of dangerZones) {
-          const dx = cached.x - dz.x;
-          const dy = cached.y - dz.y;
-          const dist = Math.hypot(dx, dy) + 0.001;
-          const r = dz.radius || 18.0;
+        let targetDx = 0;
+        let targetDy = 0;
 
-          if (dist < r * 2.8) {
-            inSurgeProximity = true;
-            // High-impact shockwave repulsion outward from surge epicenter
-            const shockPush = Math.min(8.5, 7.0 * (1.0 - dist / (r * 2.8)) + 3.0);
-            fleeDirX += (dx / dist) * shockPush;
-            fleeDirY += (dy / dist) * shockPush;
+        // Exit Allocation: each person/group is heading towards a different exit (East, West, North, South)
+        const assignedExit = exits[(cached.assignedExitIndex || 0) % exits.length] || exits[0];
+        const distToAssigned = Math.hypot(assignedExit.x - cached.x, assignedExit.y - cached.y);
+
+        // Check if any exit is within immediate line of sight (< 16m)
+        let nearestExit = assignedExit;
+        let nearestDist = distToAssigned;
+        for (const ex of exits) {
+          const d = Math.hypot(ex.x - cached.x, ex.y - cached.y);
+          if (d < nearestDist) {
+            nearestDist = d;
+            nearestExit = ex;
           }
         }
 
-        let desiredVx = 0;
-        let desiredVy = 0;
+        // If disoriented initially, agent rushes in their personalized scatter angle
+        if (cached.disorientationTimer && cached.disorientationTimer > 0 && nearestDist > 14.0) {
+          const pAngle = cached.panicAngle || (i * 2.39996);
+          const scatterSpeed = 2.8 + (i % 4) * 0.35;
+          targetDx = Math.cos(pAngle) * scatterSpeed;
+          targetDy = Math.sin(pAngle) * scatterSpeed;
 
-        if (inSurgeProximity) {
-          // Direct radial panic sprint away from the stampede epicenter
-          const fleeMag = Math.hypot(fleeDirX, fleeDirY) + 1e-5;
-          const sprintSpd = 3.2 + (i % 6) * 0.22;
-          desiredVx = (fleeDirX / fleeMag) * sprintSpd + pushFx;
-          desiredVy = (fleeDirY / fleeMag) * sprintSpd + pushFy;
-        } else {
-          // Find nearest unblocked exit gate
-          let bestExit = exits[0];
-          let bestDist = 9999;
-          for (const ex of exits) {
-            const dist = Math.hypot(ex.x - cached.x, ex.y - cached.y);
-            if (dist < bestDist) {
-              bestDist = dist;
-              bestExit = ex;
-            }
+          // Rebound when hitting boundary walls
+          if (cached.x < 5.0 || cached.x > venueWidth - 5.0 || cached.y < 5.0 || cached.y > venueLength - 5.0) {
+            cached.panicAngle = Math.atan2((venueLength / 2) - cached.y, (venueWidth / 2) - cached.x) + (Math.random() - 0.5);
           }
+        } else {
+          // Target either nearby spotted exit or assigned exit
+          const targetExit = (nearestDist < 14.0) ? nearestExit : assignedExit;
+          const distToTarget = (nearestDist < 14.0) ? nearestDist : distToAssigned;
 
-          // If reached exit gate, step through and continue outward egress
-          if (bestDist < 3.5 || cached.isExiting) {
+          // If reached exit gate doorway, pass through and disperse into exterior
+          if (distToTarget < 3.2 || cached.isExiting) {
             cached.isExiting = true;
             cached.egressDist += dt * 2.8;
 
-            // Outward vector away from venue center
-            const outwardX = bestExit.x - (venueWidth / 2);
-            const outwardY = bestExit.y - (venueLength / 2);
+            const outwardX = targetExit.x - (venueWidth / 2);
+            const outwardY = targetExit.y - (venueLength / 2);
             const outMag = Math.hypot(outwardX, outwardY) + 1e-5;
 
-            desiredVx = (outwardX / outMag) * 2.6 + pushFx * 0.5;
-            desiredVy = (outwardY / outMag) * 2.6 + pushFy * 0.5;
+            targetDx = (outwardX / outMag) * 2.8;
+            targetDy = (outwardY / outMag) * 2.8;
 
-            // Only mark safe after dispersing 18m beyond the exit
             if (cached.egressDist > 18.0) {
               cached.isSafe = true;
               a.state = 'SAFE';
               continue;
             }
           } else {
-            // Sprint towards nearest exit gate with doorway funneling
-            const dx = bestExit.x - cached.x;
-            const dy = bestExit.y - cached.y;
+            // Push towards exit doorway
+            const dx = targetExit.x - cached.x;
+            const dy = targetExit.y - cached.y;
             const d = Math.hypot(dx, dy) + 1e-5;
 
-            // Doorway Compression & Jamming: speed throttles when crowd jams into bottleneck
-            const doorwayArching = localCrowdDensity >= 4 && bestDist < 6.0 ? 0.65 : 1.0;
-            const sprintSpeed = (3.0 + (i % 5) * 0.2) * doorwayArching;
+            // Doorway Compression: crowd slows down naturally when crowded into narrow doors
+            const doorwayArching = localCrowdDensity >= 4 && distToTarget < 6.0 ? 0.65 : 1.0;
+            const sprintSpeed = (3.2 + (i % 5) * 0.22) * doorwayArching;
 
-            desiredVx = (dx / d) * sprintSpeed + pushFx;
-            desiredVy = (dy / d) * sprintSpeed + pushFy;
+            targetDx = (dx / d) * sprintSpeed;
+            targetDy = (dy / d) * sprintSpeed;
           }
         }
 
-        // Realistic body acceleration & inertia
-        cached.vx = THREE.MathUtils.lerp(cached.vx, desiredVx, Math.min(1.0, dt * 4.2));
-        cached.vy = THREE.MathUtils.lerp(cached.vy, desiredVy, Math.min(1.0, dt * 4.2));
+        // Apply physical inter-agent contact pushing forces
+        const desiredVx = targetDx + pushFx;
+        const desiredVy = targetDy + pushFy;
+
+        // Realistic acceleration with body inertia
+        cached.vx = THREE.MathUtils.lerp(cached.vx, desiredVx, Math.min(1.0, dt * 4.5));
+        cached.vy = THREE.MathUtils.lerp(cached.vy, desiredVy, Math.min(1.0, dt * 4.5));
       } else if (!isFallen) {
         // --- NORMAL REAL-TIME PEDESTRIAN CIRCULATION & WANDERING ---
         cached.wanderTimer -= dt;
