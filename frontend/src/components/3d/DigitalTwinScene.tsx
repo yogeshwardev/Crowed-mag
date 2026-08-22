@@ -31,6 +31,46 @@ import { FlowVisualizer } from './FlowVisualizer';
 import { CameraManager } from './CameraManager';
 import { DroneFleet } from './DroneFleet';
 import { DroneTacticalHUD } from './DroneTacticalHUD';
+import { useFrame } from '@react-three/fiber';
+
+// Expanding 3D Shockwave Surge Ring on the pitch during a Stampede
+const StampedeShockwave: React.FC<{ dangerZones: Array<{ x: number; y: number; radius: number }>; venueWidth: number; venueLength: number }> = ({ dangerZones, venueWidth, venueLength }) => {
+  const ringRef = useRef<THREE.Mesh>(null);
+  const ring2Ref = useRef<THREE.Mesh>(null);
+  
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime();
+    if (ringRef.current) {
+      const scale = (t * 2.2) % 3.5;
+      ringRef.current.scale.set(scale * 8 + 1, scale * 8 + 1, 1);
+      (ringRef.current.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 0.85 - scale * 0.22);
+    }
+    if (ring2Ref.current) {
+      const scale = ((t + 0.45) * 2.2) % 3.5;
+      ring2Ref.current.scale.set(scale * 8 + 1, scale * 8 + 1, 1);
+      (ring2Ref.current.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 0.65 - scale * 0.18);
+    }
+  });
+
+  if (dangerZones.length === 0) return null;
+  const dz = dangerZones[0];
+  const wx = dz.x - venueWidth / 2;
+  const wz = dz.y - venueLength / 2;
+
+  return (
+    <group position={[wx, 0.12, wz]}>
+      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[2.0, 2.8, 48]} />
+        <meshBasicMaterial color="#f43f5e" transparent opacity={0.85} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh ref={ring2Ref} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[1.4, 2.0, 48]} />
+        <meshBasicMaterial color="#fb923c" transparent opacity={0.65} side={THREE.DoubleSide} />
+      </mesh>
+      <pointLight position={[0, 2.5, 0]} intensity={5.0} distance={30} color="#f43f5e" />
+    </group>
+  );
+};
 
 interface DigitalTwinSceneProps {
   blueprint: Blueprint;
@@ -237,6 +277,15 @@ export const DigitalTwinScene: React.FC<DigitalTwinSceneProps> = ({
             elements={blueprint.elements}
             speedMultiplier={simSpeed}
             onEvacuationProgress={onEvacuationProgress}
+          />
+        )}
+
+        {/* Real-time 3D Stampede Shockwave Ripple Effect */}
+        {isEmergency && telemetry?.emergency_scenario === 'stampede' && (
+          <StampedeShockwave
+            dangerZones={dangerZones}
+            venueWidth={blueprint.width}
+            venueLength={blueprint.length}
           />
         )}
 

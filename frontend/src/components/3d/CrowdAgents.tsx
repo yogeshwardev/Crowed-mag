@@ -129,6 +129,22 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
     leftArmMeshRef.current.count = count;
     rightArmMeshRef.current.count = count;
 
+    // Build fast 2D spatial grid for physical crowd collision, interpersonal pushing, and jostling
+    const cellSize = 3.0;
+    const gridCols = Math.max(1, Math.ceil(venueWidth / cellSize));
+    const gridRows = Math.max(1, Math.ceil(venueLength / cellSize));
+    const spatialGrid: number[][] = Array.from({ length: gridCols * gridRows }, () => []);
+
+    for (let i = 0; i < count; i++) {
+      const a = agents[i];
+      const cached = kinematicCache.current.get(a.id);
+      if (cached && !cached.isSafe) {
+        const cx = Math.max(0, Math.min(gridCols - 1, Math.floor(cached.x / cellSize)));
+        const cy = Math.max(0, Math.min(gridRows - 1, Math.floor(cached.y / cellSize)));
+        spatialGrid[cy * gridCols + cx].push(i);
+      }
+    }
+
     for (let i = 0; i < count; i++) {
       const a = agents[i];
 
@@ -153,14 +169,6 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
           serverLastY: a.y,
         };
         kinematicCache.current.set(a.id, cached);
-      }
-
-      // If server streams active non-zero position changes, blend smoothly
-      if (a.x !== cached.serverLastX || a.y !== cached.serverLastY) {
-        cached.serverLastX = a.x;
-        cached.serverLastY = a.y;
-        cached.x = THREE.MathUtils.lerp(cached.x, a.x, Math.min(1.0, dt * 6.0));
-        cached.y = THREE.MathUtils.lerp(cached.y, a.y, Math.min(1.0, dt * 6.0));
       }
 
       // Reset safe/exited state and re-populate when emergency is cleared
@@ -191,39 +199,109 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
       }
 
       const isRunning = isEmergency || a.state === 'EVACUATING' || a.state === 'PANIC' || (a.panic_level && a.panic_level > 0.35) || dangerZones.length > 0;
-      const isFallen = a.state === 'FALLEN' || a.state === 'STUMBLING';
+      let isFallen = a.state === 'FALLEN' || a.state === 'STUMBLING';
 
-      // 1. Realistic Multi-Agent Stampede & Evacuation Dynamics
-      if (isRunning) {
-        // --- STAMPEDE & FIRE ESCAPE ---
+      // 1. Inter-Agent Physical Contact Forces, Pushing & Crowd Jostling (Social Force + Compression)
+      let pushFx = 0;
+      let pushFy = 0;
+      let localCrowdDensity = 0;
+
+      const cellX = Math.max(0, Math.min(gridCols - 1, Math.floor(cached.x / cellSize)));
+      const cellY = Math.max(0, Math.min(gridRows - 1, Math.floor(cached.y / cellSize)));
+
+      for (let ox = -1; ox <= 1; ox++) {
+        for (let oy = -1; oy <= 1; oy++) {
+          const gx = cellX + ox;
+          const gy = cellY + oy;
+          if (gx >= 0 && gx < gridCols && gy >= 0 && gy < gridRows) {
+            const neighbors = spatialGrid[gy * gridCols + gx];
+            for (const otherIdx of neighbors) {
+              if (otherIdx === i) continue;
+              const other = agents[otherIdx];
+              const otherCached = kinematicCache.current.get(other.id);
+              if (!otherCached || otherCached.isSafe) continue;
+
+              const dx = cached.x - otherCached.x;
+              const dy = cached.y - otherCached.y;
+              const dist = Math.hypot(dx, dy);
+
+              if (dist < 1.4) {
+                localCrowdDensity++;
+              }
+
+              // Physical pushing distance threshold
+              const contactDist = other.state === 'FALLEN' ? 1.2 : 0.76;
+              if (dist > 0.001 && dist < contactDist) {
+                const overlap = contactDist - dist;
+                const pushMag = isRunning ? 9.5 : 4.0;
+                pushFx += (dx / dist) * overlap * pushMag;
+                pushFy += (dy / dist) * overlap * pushMag;
+
+                // Lateral jostle eddy in stampede
+                if (isRunning) {
+                  const perpX = -dy / dist;
+                  const perpY = dx / dist;
+                  const jostle = Math.sin(time * 12.0 + i * 2.1) * overlap * 4.5;
+                  pushFx += perpX * jostle;
+                  pushFy += perpY * jostle;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Stampede Trip & Fall Mechanics (Stumbling under high crush force)
+      if (isRunning && !isFallen && localCrowdDensity >= 4 && Math.hypot(cached.vx, cached.vy) > 2.2) {
+        if (Math.random() < 0.0025 * dt * 60) {
+          a.state = 'FALLEN';
+          isFallen = true;
+          (a as any).fallTimer = 2.8 + Math.random() * 2.0;
+        }
+      }
+
+      if (isFallen) {
+        (a as any).fallTimer = ((a as any).fallTimer || 2.5) - dt;
+        cached.vx *= 0.75;
+        cached.vy *= 0.75;
+        if ((a as any).fallTimer <= 0) {
+          a.state = 'EVACUATING';
+          isFallen = false;
+        }
+      }
+
+      // 2. Realistic Multi-Agent Stampede & Evacuation Dynamics
+      if (isRunning && !isFallen) {
+        // --- STAMPEDE SURGE & FIRE ESCAPE ---
         let fleeDirX = 0;
         let fleeDirY = 0;
-        let inFireProximity = false;
+        let inSurgeProximity = false;
 
-        // Check distance to all active fire hotspots
+        // Check distance to all active stampede / fire danger zones
         for (const dz of dangerZones) {
           const dx = cached.x - dz.x;
           const dy = cached.y - dz.y;
           const dist = Math.hypot(dx, dy) + 0.001;
-          const r = dz.radius || 15.0;
+          const r = dz.radius || 18.0;
 
-          if (dist < r * 2.5) {
-            inFireProximity = true;
-            const push = Math.min(6.5, 5.5 * (1.0 - dist / (r * 2.5)) + 2.5);
-            fleeDirX += (dx / dist) * push;
-            fleeDirY += (dy / dist) * push;
+          if (dist < r * 2.8) {
+            inSurgeProximity = true;
+            // High-impact shockwave repulsion outward from surge epicenter
+            const shockPush = Math.min(8.5, 7.0 * (1.0 - dist / (r * 2.8)) + 3.0);
+            fleeDirX += (dx / dist) * shockPush;
+            fleeDirY += (dy / dist) * shockPush;
           }
         }
 
         let desiredVx = 0;
         let desiredVy = 0;
 
-        if (inFireProximity) {
-          // Direct radial sprint away from the fire epicenter
+        if (inSurgeProximity) {
+          // Direct radial panic sprint away from the stampede epicenter
           const fleeMag = Math.hypot(fleeDirX, fleeDirY) + 1e-5;
-          const sprintSpd = 2.8 + (i % 5) * 0.15;
-          desiredVx = (fleeDirX / fleeMag) * sprintSpd;
-          desiredVy = (fleeDirY / fleeMag) * sprintSpd;
+          const sprintSpd = 3.2 + (i % 6) * 0.22;
+          desiredVx = (fleeDirX / fleeMag) * sprintSpd + pushFx;
+          desiredVy = (fleeDirY / fleeMag) * sprintSpd + pushFy;
         } else {
           // Find nearest unblocked exit gate
           let bestExit = exits[0];
@@ -239,15 +317,15 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
           // If reached exit gate, step through and continue outward egress
           if (bestDist < 3.5 || cached.isExiting) {
             cached.isExiting = true;
-            cached.egressDist += dt * 2.4;
+            cached.egressDist += dt * 2.8;
 
             // Outward vector away from venue center
             const outwardX = bestExit.x - (venueWidth / 2);
             const outwardY = bestExit.y - (venueLength / 2);
             const outMag = Math.hypot(outwardX, outwardY) + 1e-5;
 
-            desiredVx = (outwardX / outMag) * 2.2;
-            desiredVy = (outwardY / outMag) * 2.2;
+            desiredVx = (outwardX / outMag) * 2.6 + pushFx * 0.5;
+            desiredVy = (outwardY / outMag) * 2.6 + pushFy * 0.5;
 
             // Only mark safe after dispersing 18m beyond the exit
             if (cached.egressDist > 18.0) {
@@ -261,17 +339,19 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
             const dy = bestExit.y - cached.y;
             const d = Math.hypot(dx, dy) + 1e-5;
 
-            // Bottleneck Arching: naturally slow down at dense doorway choke points
-            const bottleneckSpeed = bestDist < 8.0 ? Math.max(1.4, 2.6 * (bestDist / 8.0)) : (2.6 + (i % 5) * 0.15);
-            desiredVx = (dx / d) * bottleneckSpeed;
-            desiredVy = (dy / d) * bottleneckSpeed;
+            // Doorway Compression & Jamming: speed throttles when crowd jams into bottleneck
+            const doorwayArching = localCrowdDensity >= 4 && bestDist < 6.0 ? 0.65 : 1.0;
+            const sprintSpeed = (3.0 + (i % 5) * 0.2) * doorwayArching;
+
+            desiredVx = (dx / d) * sprintSpeed + pushFx;
+            desiredVy = (dy / d) * sprintSpeed + pushFy;
           }
         }
 
-        // Realistic acceleration with body inertia (takes ~1s to reach top sprint)
-        cached.vx = THREE.MathUtils.lerp(cached.vx, desiredVx, Math.min(1.0, dt * 3.5));
-        cached.vy = THREE.MathUtils.lerp(cached.vy, desiredVy, Math.min(1.0, dt * 3.5));
-      } else {
+        // Realistic body acceleration & inertia
+        cached.vx = THREE.MathUtils.lerp(cached.vx, desiredVx, Math.min(1.0, dt * 4.2));
+        cached.vy = THREE.MathUtils.lerp(cached.vy, desiredVy, Math.min(1.0, dt * 4.2));
+      } else if (!isFallen) {
         // --- NORMAL REAL-TIME PEDESTRIAN CIRCULATION & WANDERING ---
         cached.wanderTimer -= dt;
         const distToTarget = Math.hypot(cached.targetX - cached.x, cached.targetY - cached.y);
@@ -287,11 +367,11 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
         const d = Math.hypot(dx, dy) + 1e-5;
         const walkSpeed = 0.95 + (i % 4) * 0.08;
 
-        const desiredVx = (dx / d) * walkSpeed;
-        const desiredVy = (dy / d) * walkSpeed;
+        const desiredVx = (dx / d) * walkSpeed + pushFx * 0.6;
+        const desiredVy = (dy / d) * walkSpeed + pushFy * 0.6;
 
-        cached.vx = THREE.MathUtils.lerp(cached.vx, desiredVx, Math.min(1.0, dt * 2.5));
-        cached.vy = THREE.MathUtils.lerp(cached.vy, desiredVy, Math.min(1.0, dt * 2.5));
+        cached.vx = THREE.MathUtils.lerp(cached.vx, desiredVx, Math.min(1.0, dt * 2.8));
+        cached.vy = THREE.MathUtils.lerp(cached.vy, desiredVy, Math.min(1.0, dt * 2.8));
       }
 
       // Integrate position
