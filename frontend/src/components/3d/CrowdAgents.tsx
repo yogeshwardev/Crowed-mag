@@ -76,11 +76,6 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
     isSafe: boolean;
     serverLastX?: number;
     serverLastY?: number;
-    assignedExitIndex?: number;
-    panicAngle?: number;
-    disorientationTimer?: number;
-    isFallen?: boolean;
-    fallTimer?: number;
   }>>(new Map());
 
   // Extract exit coordinates
@@ -134,22 +129,6 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
     leftArmMeshRef.current.count = count;
     rightArmMeshRef.current.count = count;
 
-    // Build fast 2D spatial grid for physical crowd collision, interpersonal pushing, and jostling
-    const cellSize = 3.0;
-    const gridCols = Math.max(1, Math.ceil(venueWidth / cellSize));
-    const gridRows = Math.max(1, Math.ceil(venueLength / cellSize));
-    const spatialGrid: number[][] = Array.from({ length: gridCols * gridRows }, () => []);
-
-    for (let i = 0; i < count; i++) {
-      const a = agents[i];
-      const cached = kinematicCache.current.get(a.id);
-      if (cached && !cached.isSafe) {
-        const cx = Math.max(0, Math.min(gridCols - 1, Math.floor(cached.x / cellSize)));
-        const cy = Math.max(0, Math.min(gridRows - 1, Math.floor(cached.y / cellSize)));
-        spatialGrid[cy * gridCols + cx].push(i);
-      }
-    }
-
     for (let i = 0; i < count; i++) {
       const a = agents[i];
 
@@ -172,11 +151,16 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
           isSafe: false,
           serverLastX: a.x,
           serverLastY: a.y,
-          assignedExitIndex: i % Math.max(1, exits.length),
-          panicAngle: (i * 2.39996) % (Math.PI * 2), // Full 360-degree multidirectional scatter
-          disorientationTimer: (i % 3 === 0) ? (1.5 + (i % 5) * 0.8) : 0,
         };
         kinematicCache.current.set(a.id, cached);
+      }
+
+      // If server streams active non-zero position changes, blend smoothly
+      if (a.x !== cached.serverLastX || a.y !== cached.serverLastY) {
+        cached.serverLastX = a.x;
+        cached.serverLastY = a.y;
+        cached.x = THREE.MathUtils.lerp(cached.x, a.x, Math.min(1.0, dt * 6.0));
+        cached.y = THREE.MathUtils.lerp(cached.y, a.y, Math.min(1.0, dt * 6.0));
       }
 
       // Reset safe/exited state and re-populate when emergency is cleared
@@ -189,9 +173,6 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
         cached.targetX = 8.0 + Math.random() * (venueWidth - 16.0);
         cached.targetY = 8.0 + Math.random() * (venueLength - 16.0);
         cached.wanderTimer = 3.0 + Math.random() * 8.0;
-        cached.assignedExitIndex = i % Math.max(1, exits.length);
-        cached.panicAngle = (i * 2.39996) % (Math.PI * 2);
-        cached.disorientationTimer = (i % 3 === 0) ? (1.5 + (i % 5) * 0.8) : 0;
         a.state = 'WALKING';
       }
 
@@ -210,222 +191,107 @@ export const CrowdAgents: React.FC<CrowdAgentsProps> = ({
       }
 
       const isRunning = isEmergency || a.state === 'EVACUATING' || a.state === 'PANIC' || (a.panic_level && a.panic_level > 0.35) || dangerZones.length > 0;
-      let isFallen = a.state === 'FALLEN' || a.state === 'STUMBLING';
+      const isFallen = a.state === 'FALLEN' || a.state === 'STUMBLING';
 
-      // 0. Fire & Flame Hazard Exclusion (Thermal Repulsion & Impassable Flame Barrier)
-      let fireRepulsionX = 0;
-      let fireRepulsionY = 0;
-      let inFireZone = false;
+      // 1. Realistic Multi-Agent Stampede & Evacuation Dynamics
+      if (isRunning) {
+        // --- STAMPEDE & FIRE ESCAPE ---
+        let fleeDirX = 0;
+        let fleeDirY = 0;
+        let inFireProximity = false;
 
-      for (const dz of dangerZones) {
-        const dx = cached.x - dz.x;
-        const dy = cached.y - dz.y;
-        const dist = Math.hypot(dx, dy) + 0.0001;
-        const flameRadius = dz.radius || 12.0;
+        // Check distance to all active fire hotspots
+        for (const dz of dangerZones) {
+          const dx = cached.x - dz.x;
+          const dy = cached.y - dz.y;
+          const dist = Math.hypot(dx, dy) + 0.001;
+          const r = dz.radius || 15.0;
 
-        // Hard flame core constraint: strictly prevent anyone from stepping on or inside fire
-        if (dist < flameRadius) {
-          inFireZone = true;
-          const pushOut = flameRadius - dist;
-          cached.x += (dx / dist) * (pushOut + 0.8);
-          cached.y += (dy / dist) * (pushOut + 0.8);
-          fireRepulsionX += (dx / dist) * 28.0;
-          fireRepulsionY += (dy / dist) * 28.0;
-        } else if (dist < flameRadius * 2.8) {
-          inFireZone = true;
-          // Thermal radiant repulsion pushing outward from fire zone
-          const heatPush = (1.0 - dist / (flameRadius * 2.8)) * 20.0;
-          fireRepulsionX += (dx / dist) * heatPush;
-          fireRepulsionY += (dy / dist) * heatPush;
-        }
-      }
-
-      // 1. Heavy Inter-Agent Physical Contact Forces, Pushing & Crowd Shoving (Social Force + Compression)
-      let pushFx = 0;
-      let pushFy = 0;
-      let localCrowdDensity = 0;
-
-      const cellX = Math.max(0, Math.min(gridCols - 1, Math.floor(cached.x / cellSize)));
-      const cellY = Math.max(0, Math.min(gridRows - 1, Math.floor(cached.y / cellSize)));
-
-      for (let ox = -1; ox <= 1; ox++) {
-        for (let oy = -1; oy <= 1; oy++) {
-          const gx = cellX + ox;
-          const gy = cellY + oy;
-          if (gx >= 0 && gx < gridCols && gy >= 0 && gy < gridRows) {
-            const neighbors = spatialGrid[gy * gridCols + gx];
-            for (const otherIdx of neighbors) {
-              if (otherIdx === i) continue;
-              const other = agents[otherIdx];
-              const otherCached = kinematicCache.current.get(other.id);
-              if (!otherCached || otherCached.isSafe) continue;
-
-              const dx = cached.x - otherCached.x;
-              const dy = cached.y - otherCached.y;
-              const dist = Math.hypot(dx, dy);
-
-              if (dist < 1.4) {
-                localCrowdDensity++;
-              }
-
-              // Physical pushing distance threshold
-              const contactDist = other.state === 'FALLEN' ? 1.25 : 0.82;
-              if (dist > 0.001 && dist < contactDist) {
-                const overlap = contactDist - dist;
-                const pushMag = isRunning ? 15.0 : 4.5;
-                pushFx += (dx / dist) * overlap * pushMag;
-                pushFy += (dy / dist) * overlap * pushMag;
-
-                // Lateral jostle eddy in stampede shoving
-                if (isRunning) {
-                  const perpX = -dy / dist;
-                  const perpY = dx / dist;
-                  const jostle = Math.sin(time * 14.0 + i * 2.1) * overlap * 6.5;
-                  pushFx += perpX * jostle;
-                  pushFy += perpY * jostle;
-                }
-              }
-            }
+          if (dist < r * 2.5) {
+            inFireProximity = true;
+            const push = Math.min(6.5, 5.5 * (1.0 - dist / (r * 2.5)) + 2.5);
+            fleeDirX += (dx / dist) * push;
+            fleeDirY += (dy / dist) * push;
           }
         }
-      }
 
-      // Stampede Trip & Fall Mechanics (Stumbling under high crush force)
-      if (isRunning && !isFallen && localCrowdDensity >= 4 && Math.hypot(cached.vx, cached.vy) > 2.2 && !inFireZone) {
-        if (Math.random() < 0.003 * dt * 60) {
-          a.state = 'FALLEN';
-          isFallen = true;
-          (a as any).fallTimer = 2.8 + Math.random() * 2.0;
-        }
-      }
+        let desiredVx = 0;
+        let desiredVy = 0;
 
-      if (isFallen) {
-        (a as any).fallTimer = ((a as any).fallTimer || 2.5) - dt;
-        cached.vx *= 0.75;
-        cached.vy *= 0.75;
-        if ((a as any).fallTimer <= 0) {
-          a.state = 'EVACUATING';
-          isFallen = false;
-        }
-      }
-
-      // 2. Realistic Multi-Agent Dynamics: Multi-Directional Scattering, Exit Diversity & Fire Repulsion
-      let targetDx = 0;
-      let targetDy = 0;
-
-      if (isRunning && !isFallen) {
-        if (cached.disorientationTimer && cached.disorientationTimer > 0) {
-          cached.disorientationTimer -= dt;
-        }
-
-        // If in danger/fire proximity, fleeing away from the hazard is absolute top priority
-        if (inFireZone) {
-          const fleeMag = Math.hypot(fireRepulsionX, fireRepulsionY) + 1e-5;
-          const sprintSpd = 3.6 + (i % 5) * 0.25;
-          targetDx = (fireRepulsionX / fleeMag) * sprintSpd;
-          targetDy = (fireRepulsionY / fleeMag) * sprintSpd;
+        if (inFireProximity) {
+          // Direct radial sprint away from the fire epicenter
+          const fleeMag = Math.hypot(fleeDirX, fleeDirY) + 1e-5;
+          const sprintSpd = 2.8 + (i % 5) * 0.15;
+          desiredVx = (fleeDirX / fleeMag) * sprintSpd;
+          desiredVy = (fleeDirY / fleeMag) * sprintSpd;
         } else {
-          // Exit Allocation: each person/group is heading towards a different exit (East, West, North, South)
-          const assignedExit = exits[(cached.assignedExitIndex || 0) % exits.length] || exits[0];
-          const distToAssigned = Math.hypot(assignedExit.x - cached.x, assignedExit.y - cached.y);
-
-          // Check if any exit is within immediate line of sight (< 16m)
-          let nearestExit = assignedExit;
-          let nearestDist = distToAssigned;
+          // Find nearest unblocked exit gate
+          let bestExit = exits[0];
+          let bestDist = 9999;
           for (const ex of exits) {
-            const d = Math.hypot(ex.x - cached.x, ex.y - cached.y);
-            if (d < nearestDist) {
-              nearestDist = d;
-              nearestExit = ex;
+            const dist = Math.hypot(ex.x - cached.x, ex.y - cached.y);
+            if (dist < bestDist) {
+              bestDist = dist;
+              bestExit = ex;
             }
           }
 
-          // If disoriented initially, agent rushes in their personalized scatter angle
-          if (cached.disorientationTimer && cached.disorientationTimer > 0 && nearestDist > 14.0) {
-            const pAngle = cached.panicAngle || (i * 2.39996);
-            const scatterSpeed = 2.8 + (i % 4) * 0.35;
-            targetDx = Math.cos(pAngle) * scatterSpeed;
-            targetDy = Math.sin(pAngle) * scatterSpeed;
+          // If reached exit gate, step through and continue outward egress
+          if (bestDist < 3.5 || cached.isExiting) {
+            cached.isExiting = true;
+            cached.egressDist += dt * 2.4;
 
-            // Rebound when hitting boundary walls
-            if (cached.x < 5.0 || cached.x > venueWidth - 5.0 || cached.y < 5.0 || cached.y > venueLength - 5.0) {
-              cached.panicAngle = Math.atan2((venueLength / 2) - cached.y, (venueWidth / 2) - cached.x) + (Math.random() - 0.5);
+            // Outward vector away from venue center
+            const outwardX = bestExit.x - (venueWidth / 2);
+            const outwardY = bestExit.y - (venueLength / 2);
+            const outMag = Math.hypot(outwardX, outwardY) + 1e-5;
+
+            desiredVx = (outwardX / outMag) * 2.2;
+            desiredVy = (outwardY / outMag) * 2.2;
+
+            // Only mark safe after dispersing 18m beyond the exit
+            if (cached.egressDist > 18.0) {
+              cached.isSafe = true;
+              a.state = 'SAFE';
+              continue;
             }
           } else {
-            // Target either nearby spotted exit or assigned exit
-            const targetExit = (nearestDist < 14.0) ? nearestExit : assignedExit;
-            const distToTarget = (nearestDist < 14.0) ? nearestDist : distToAssigned;
+            // Sprint towards nearest exit gate with doorway funneling
+            const dx = bestExit.x - cached.x;
+            const dy = bestExit.y - cached.y;
+            const d = Math.hypot(dx, dy) + 1e-5;
 
-            // If reached exit gate doorway, pass through and disperse into exterior
-            if (distToTarget < 3.2 || cached.isExiting) {
-              cached.isExiting = true;
-              cached.egressDist += dt * 2.8;
-
-              const outwardX = targetExit.x - (venueWidth / 2);
-              const outwardY = targetExit.y - (venueLength / 2);
-              const outMag = Math.hypot(outwardX, outwardY) + 1e-5;
-
-              targetDx = (outwardX / outMag) * 2.8;
-              targetDy = (outwardY / outMag) * 2.8;
-
-              if (cached.egressDist > 18.0) {
-                cached.isSafe = true;
-                a.state = 'SAFE';
-                continue;
-              }
-            } else {
-              // Push towards exit doorway
-              const dx = targetExit.x - cached.x;
-              const dy = targetExit.y - cached.y;
-              const d = Math.hypot(dx, dy) + 1e-5;
-
-              // Doorway Compression: crowd slows down naturally when crowded into narrow doors
-              const doorwayArching = localCrowdDensity >= 4 && distToTarget < 6.0 ? 0.65 : 1.0;
-              const sprintSpeed = (3.2 + (i % 5) * 0.22) * doorwayArching;
-
-              targetDx = (dx / d) * sprintSpeed;
-              targetDy = (dy / d) * sprintSpeed;
-            }
+            // Bottleneck Arching: naturally slow down at dense doorway choke points
+            const bottleneckSpeed = bestDist < 8.0 ? Math.max(1.4, 2.6 * (bestDist / 8.0)) : (2.6 + (i % 5) * 0.15);
+            desiredVx = (dx / d) * bottleneckSpeed;
+            desiredVy = (dy / d) * bottleneckSpeed;
           }
         }
 
-        // Apply physical inter-agent contact pushing forces and fire repulsion
-        const desiredVx = targetDx + pushFx + fireRepulsionX * 0.5;
-        const desiredVy = targetDy + pushFy + fireRepulsionY * 0.5;
-
-        // Realistic acceleration with body inertia
-        cached.vx = THREE.MathUtils.lerp(cached.vx, desiredVx, Math.min(1.0, dt * 4.5));
-        cached.vy = THREE.MathUtils.lerp(cached.vy, desiredVy, Math.min(1.0, dt * 4.5));
-      } else if (!isFallen) {
+        // Realistic acceleration with body inertia (takes ~1s to reach top sprint)
+        cached.vx = THREE.MathUtils.lerp(cached.vx, desiredVx, Math.min(1.0, dt * 3.5));
+        cached.vy = THREE.MathUtils.lerp(cached.vy, desiredVy, Math.min(1.0, dt * 3.5));
+      } else {
         // --- NORMAL REAL-TIME PEDESTRIAN CIRCULATION & WANDERING ---
-        if (inFireZone) {
-          // If fire is ignited nearby during normal walking, immediately detour and flee
-          targetDx = fireRepulsionX;
-          targetDy = fireRepulsionY;
-        } else {
-          cached.wanderTimer -= dt;
-          const distToTarget = Math.hypot(cached.targetX - cached.x, cached.targetY - cached.y);
+        cached.wanderTimer -= dt;
+        const distToTarget = Math.hypot(cached.targetX - cached.x, cached.targetY - cached.y);
 
-          if (distToTarget < 2.5 || cached.wanderTimer <= 0) {
-            cached.wanderTimer = 6.0 + Math.random() * 12.0;
-            cached.targetX = 8.0 + Math.random() * (venueWidth - 16.0);
-            cached.targetY = 8.0 + Math.random() * (venueLength - 16.0);
-          }
-
-          const dx = cached.targetX - cached.x;
-          const dy = cached.targetY - cached.y;
-          const d = Math.hypot(dx, dy) + 1e-5;
-          const walkSpeed = 0.95 + (i % 4) * 0.08;
-
-          targetDx = (dx / d) * walkSpeed;
-          targetDy = (dy / d) * walkSpeed;
+        if (distToTarget < 2.5 || cached.wanderTimer <= 0) {
+          cached.wanderTimer = 6.0 + Math.random() * 12.0;
+          cached.targetX = 8.0 + Math.random() * (venueWidth - 16.0);
+          cached.targetY = 8.0 + Math.random() * (venueLength - 16.0);
         }
 
-        const desiredVx = targetDx + pushFx * 0.6 + fireRepulsionX * 0.6;
-        const desiredVy = targetDy + pushFy * 0.6 + fireRepulsionY * 0.6;
+        const dx = cached.targetX - cached.x;
+        const dy = cached.targetY - cached.y;
+        const d = Math.hypot(dx, dy) + 1e-5;
+        const walkSpeed = 0.95 + (i % 4) * 0.08;
 
-        cached.vx = THREE.MathUtils.lerp(cached.vx, desiredVx, Math.min(1.0, dt * 2.8));
-        cached.vy = THREE.MathUtils.lerp(cached.vy, desiredVy, Math.min(1.0, dt * 2.8));
+        const desiredVx = (dx / d) * walkSpeed;
+        const desiredVy = (dy / d) * walkSpeed;
+
+        cached.vx = THREE.MathUtils.lerp(cached.vx, desiredVx, Math.min(1.0, dt * 2.5));
+        cached.vy = THREE.MathUtils.lerp(cached.vy, desiredVy, Math.min(1.0, dt * 2.5));
       }
 
       // Integrate position

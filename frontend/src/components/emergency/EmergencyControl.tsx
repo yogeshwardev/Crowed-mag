@@ -46,6 +46,7 @@ export const EmergencyControl: React.FC<EmergencyControlProps> = ({
   const [fireX, setFireX] = useState<number>(blueprint.width / 2);
   const [fireY, setFireY] = useState<number>(blueprint.length / 2);
   const [fireRadius, setFireRadius] = useState<number>(18);
+  const [paBroadcastMessage, setPaBroadcastMessage] = useState<string | null>(null);
 
   const isEmergency = telemetry?.is_emergency ?? false;
   const evac = telemetry?.evacuation;
@@ -298,58 +299,165 @@ export const EmergencyControl: React.FC<EmergencyControlProps> = ({
           </button>
         </div>
 
-        {/* Panel 2: Live Exit Gate Status & Dynamic Blockage Testing */}
+        {/* Panel 2: Intelligent Exit Recommendation, Crowd Passing & Fire Proximity Radar */}
         <div className="bg-[#0e1626]/90 border border-slate-800 rounded-2xl p-5 space-y-4">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <div className="flex items-center gap-2">
-              <Ban className="w-4 h-4 text-rose-400" />
-              <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Dynamic Exit Route Interventions</h3>
+              <Compass className="w-4 h-4 text-emerald-400" />
+              <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">
+                Intelligent Exit Guidance & Egress Flow Radar
+              </h3>
             </div>
-            <span className="text-[11px] text-slate-400 font-mono">
-              {blockedExits.length} Blocked
+            <span className="text-[11px] text-emerald-400 font-mono px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-800">
+              AI REAL-TIME ROUTING
             </span>
           </div>
 
           <p className="text-xs text-slate-400">
-            Simulate partial exit failure or barricaded gates to evaluate whether crowd rerouting causes secondary crush bottlenecks.
+            Real-time evaluation of all venue exits based on proximity to active fire hazards, gate width, and crowd clearance throughput.
           </p>
 
-          <div className="space-y-2 max-h-64 overflow-y-auto">
-            {exits.map(exit => {
+          {/* Active PA Broadcast Notification */}
+          {paBroadcastMessage && (
+            <div className="p-3 rounded-xl bg-cyan-950/90 border border-cyan-500/80 shadow-glow-cyan flex items-center justify-between gap-3 animate-pulse">
+              <div className="flex items-center gap-2 text-xs font-semibold text-cyan-200">
+                <Radio className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span>{paBroadcastMessage}</span>
+              </div>
+              <button
+                onClick={() => setPaBroadcastMessage(null)}
+                className="text-[10px] text-cyan-400 hover:text-white px-2 py-0.5 rounded bg-cyan-900/60"
+              >
+                DISMISS
+              </button>
+            </div>
+          )}
+
+          {/* Sorted Exit List based on Fire Proximity & Safety */}
+          <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+            {exits.map((exit, idx) => {
               const isBlocked = blockedExits.includes(exit.id);
+              const distToFire = Math.hypot(exit.x - fireX, exit.y - fireY);
+              const isFireRisk = isEmergency && distToFire < 24.0;
+              const isPreferred = isEmergency && !isBlocked && !isFireRisk;
+              
+              // Estimated crowd passed through this gate
+              const totalGateWidth = exits.reduce((acc, e) => acc + (e.width || 4), 0) || 1;
+              const gateRatio = (exit.width || 4) / totalGateWidth;
+              const passedThroughGate = isEmergency ? Math.round(exitedPeople * gateRatio) : 0;
+              const gateFlowRate = isEmergency ? Math.round((passedThroughGate / Math.max(1, elapsedSec)) * 60) : 0;
+
               return (
                 <div
                   key={exit.id}
-                  className={`p-3 rounded-xl border flex items-center justify-between transition ${
+                  className={`p-3.5 rounded-xl border transition space-y-2.5 ${
                     isBlocked
                       ? 'bg-rose-950/40 border-rose-600/80 text-rose-300'
+                      : isFireRisk
+                      ? 'bg-orange-950/40 border-rose-500/80 text-rose-200'
+                      : isPreferred
+                      ? 'bg-emerald-950/30 border-emerald-500/80 text-emerald-200 shadow-glow-emerald/30'
                       : 'bg-slate-900/60 border-slate-800 text-slate-300'
                   }`}
                 >
-                  <div>
-                    <div className="font-bold text-xs text-slate-100 flex items-center gap-1.5">
-                      <span>{exit.label || exit.id}</span>
-                      {exit.type === 'emergency_exit' && (
-                        <span className="px-1.5 py-0.5 bg-red-950 text-red-400 rounded text-[9px] font-mono border border-red-800">
-                          EMERGENCY
-                        </span>
-                      )}
+                  {/* Exit Header & Safety Verdict Tag */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-xs text-slate-100 flex items-center gap-1.5">
+                        {exit.label || exit.id}
+                        {exit.type === 'emergency_exit' && (
+                          <span className="px-1.5 py-0.5 bg-red-950 text-red-400 rounded text-[9px] font-mono border border-red-800">
+                            EMERGENCY
+                          </span>
+                        )}
+                      </span>
                     </div>
-                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                      Coordinates: ({exit.x.toFixed(0)}m, {exit.y.toFixed(0)}m) • Width: {exit.width}m
+
+                    {/* Recommendation Verdict Badge */}
+                    {isBlocked ? (
+                      <span className="px-2 py-0.5 bg-rose-950 border border-rose-500 text-rose-300 rounded text-[10px] font-extrabold flex items-center gap-1">
+                        <Ban className="w-3 h-3" /> BLOCKED
+                      </span>
+                    ) : isFireRisk ? (
+                      <span className="px-2 py-0.5 bg-rose-950/90 border border-rose-400 text-rose-200 rounded text-[10px] font-extrabold flex items-center gap-1 animate-pulse">
+                        <Flame className="w-3 h-3 text-orange-400" /> HIGH FIRE RISK — AVOID
+                      </span>
+                    ) : isPreferred ? (
+                      <span className="px-2 py-0.5 bg-emerald-950 border border-emerald-400 text-emerald-300 rounded text-[10px] font-black flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" /> ⭐ PREFERRED (SAFE)
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 bg-slate-800 text-slate-400 rounded text-[10px] font-medium">
+                        NORMAL ROUTE
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Distance to Fire Hazard & Egress Telemetry */}
+                  <div className="grid grid-cols-3 gap-2 text-xs font-mono bg-black/40 p-2 rounded-lg border border-slate-800/80">
+                    <div>
+                      <span className="text-[9px] text-slate-500 block">FIRE DISTANCE</span>
+                      <span className={`font-bold ${isFireRisk ? 'text-rose-400 animate-pulse' : 'text-emerald-400'}`}>
+                        {distToFire.toFixed(1)}m {isFireRisk ? '(HAZARD)' : '(SAFE)'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-500 block">CROWD PASSED</span>
+                      <span className="text-cyan-300 font-bold">
+                        {passedThroughGate} <span className="text-[9px] text-slate-400 font-normal">cleared</span>
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-500 block">FLOW RATE</span>
+                      <span className="text-amber-400 font-bold">
+                        {gateFlowRate} <span className="text-[9px] text-slate-400 font-normal">p/min</span>
+                      </span>
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => isBlocked ? onUnblockExit(exit.id) : onBlockExit(exit.id)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                      isBlocked
-                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                        : 'bg-rose-600 hover:bg-rose-500 text-white'
-                    }`}
-                  >
-                    {isBlocked ? 'UNBLOCK GATE' : 'BLOCK GATE'}
-                  </button>
+                  {/* Crowd Clearance Progress Bar */}
+                  {isEmergency && (
+                    <div>
+                      <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                        <span>Doorway Egress Capacity ({exit.width}m width)</span>
+                        <span className="text-cyan-300 font-mono">
+                          {totalPeople > 0 ? ((passedThroughGate / totalPeople) * 100).toFixed(1) : 0}% of venue crowd
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full transition-all duration-300 ${
+                            isFireRisk ? 'bg-rose-500' : isPreferred ? 'bg-emerald-400' : 'bg-cyan-500'
+                          }`}
+                          style={{ width: `${Math.min(100, totalPeople > 0 ? (passedThroughGate / totalPeople) * 100 * 3 : 0)}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Action Buttons: Toggle Lock & Broadcast PA Route Guidance */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={() => isBlocked ? onUnblockExit(exit.id) : onBlockExit(exit.id)}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                        isBlocked
+                          ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                          : 'bg-rose-600 hover:bg-rose-500 text-white'
+                      }`}
+                    >
+                      {isBlocked ? 'UNBLOCK GATE' : 'LOCK / BLOCK GATE'}
+                    </button>
+
+                    {isPreferred && (
+                      <button
+                        onClick={() => setPaBroadcastMessage(`📢 [PA BROADCAST]: "Attention all occupants — please calmly proceed to ${exit.label || exit.id}. Route is 100% safe."`)}
+                        className="px-3 py-1.5 bg-cyan-600/80 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 whitespace-nowrap"
+                      >
+                        <Radio className="w-3.5 h-3.5" />
+                        <span>BROADCAST PA ROUTE</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}

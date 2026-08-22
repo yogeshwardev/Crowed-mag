@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import * as THREE from 'three';
+import { Html } from '@react-three/drei';
 import { BlueprintElement, QueueStatus, FireState } from '../../types';
 import { DynamicFireAndSmoke } from './DynamicFireAndSmoke';
 
@@ -334,6 +335,13 @@ export const ProceduralVenue: React.FC<ProceduralVenueProps> = ({
           case 'exit_gate':
           case 'emergency_exit':
             const isEm = el.type === 'emergency_exit';
+            // Calculate distance to closest fire / danger zone
+            const minDistToHazard = dangerZones.length > 0
+              ? Math.min(...dangerZones.map(dz => Math.hypot(el.x - dz.x, el.y - dz.y)))
+              : 999;
+            const isFireRiskZone = dangerZones.length > 0 && minDistToHazard < 22.0;
+            const isPreferredRoute = dangerZones.length > 0 && !isBlocked && !isFireRiskZone;
+
             return (
               <group
                 key={el.id}
@@ -343,22 +351,74 @@ export const ProceduralVenue: React.FC<ProceduralVenueProps> = ({
                   if (onToggleBlockExit) onToggleBlockExit(el.id);
                 }}
               >
+                {/* Gate Pillars & Overhang */}
                 <mesh position={[-w / 2, 2.4, 0]}>
                   <boxGeometry args={[1.0, 4.8, 1.0]} />
-                  <meshStandardMaterial color={isBlocked ? '#991b1b' : isEm ? '#dc2626' : '#ea580c'} />
+                  <meshStandardMaterial
+                    color={isBlocked ? '#991b1b' : isFireRiskZone ? '#b91c1c' : isPreferredRoute ? '#047857' : isEm ? '#dc2626' : '#ea580c'}
+                  />
                 </mesh>
                 <mesh position={[w / 2, 2.4, 0]}>
                   <boxGeometry args={[1.0, 4.8, 1.0]} />
-                  <meshStandardMaterial color={isBlocked ? '#991b1b' : isEm ? '#dc2626' : '#ea580c'} />
+                  <meshStandardMaterial
+                    color={isBlocked ? '#991b1b' : isFireRiskZone ? '#b91c1c' : isPreferredRoute ? '#047857' : isEm ? '#dc2626' : '#ea580c'}
+                  />
                 </mesh>
                 <mesh position={[0, 4.4, 0]}>
                   <boxGeometry args={[w, 1.0, 0.5]} />
                   <meshStandardMaterial
-                    color={isBlocked ? '#7f1d1d' : isEm ? '#dc2626' : '#ea580c'}
-                    emissive={isBlocked ? '#ef4444' : isEm ? '#ef4444' : '#f97316'}
-                    emissiveIntensity={isBlocked ? 1.0 : 0.7}
+                    color={isBlocked ? '#7f1d1d' : isFireRiskZone ? '#991b1b' : isPreferredRoute ? '#065f46' : isEm ? '#dc2626' : '#ea580c'}
+                    emissive={isBlocked ? '#ef4444' : isFireRiskZone ? '#f97316' : isPreferredRoute ? '#10b981' : isEm ? '#ef4444' : '#f97316'}
+                    emissiveIntensity={isPreferredRoute ? 1.6 : isFireRiskZone ? 1.4 : isBlocked ? 1.2 : 0.7}
                   />
                 </mesh>
+
+                {/* Ground Glowing Chevron Guide for Preferred Exit */}
+                {isPreferredRoute && (
+                  <>
+                    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
+                      <planeGeometry args={[w * 0.9, 3.5]} />
+                      <meshBasicMaterial color="#10b981" transparent opacity={0.35} />
+                    </mesh>
+                    <pointLight position={[0, 1.5, 0]} intensity={2.0} distance={12} color="#10b981" />
+                  </>
+                )}
+
+                {/* Ground Warning Zone for Fire Risk Exit */}
+                {isFireRiskZone && (
+                  <>
+                    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
+                      <ringGeometry args={[w * 0.6, w * 0.8, 24]} />
+                      <meshBasicMaterial color="#ef4444" transparent opacity={0.6} />
+                    </mesh>
+                    <pointLight position={[0, 1.5, 0]} intensity={2.5} distance={10} color="#ef4444" />
+                  </>
+                )}
+
+                {/* Floating 3D Tactical Hologram Badge */}
+                <Html position={[0, 5.8, 0]} center distanceFactor={45} className="pointer-events-none select-none">
+                  {isBlocked ? (
+                    <div className="px-2.5 py-1 rounded-lg bg-red-950/95 border-2 border-red-500 text-red-200 text-[11px] font-black whitespace-nowrap shadow-glow-red flex items-center gap-1.5 backdrop-blur-md">
+                      <span>⛔</span>
+                      <span>LOCKED / BLOCKED</span>
+                    </div>
+                  ) : isFireRiskZone ? (
+                    <div className="px-2.5 py-1 rounded-lg bg-rose-950/95 border-2 border-rose-500 text-rose-100 text-[11px] font-black whitespace-nowrap shadow-glow-red flex items-center gap-1.5 backdrop-blur-md animate-pulse">
+                      <span>🔥</span>
+                      <span>NEAR FIRE HAZARD — AVOID ({minDistToHazard.toFixed(1)}m)</span>
+                    </div>
+                  ) : isPreferredRoute ? (
+                    <div className="px-3 py-1 rounded-lg bg-emerald-950/95 border-2 border-emerald-400 text-emerald-100 text-[11px] font-black whitespace-nowrap shadow-glow-emerald flex items-center gap-1.5 backdrop-blur-md">
+                      <span>⭐</span>
+                      <span>RECOMMENDED EXIT [SAFE] ({minDistToHazard > 100 ? 'CLEAR' : `${minDistToHazard.toFixed(0)}m clear`})</span>
+                    </div>
+                  ) : (
+                    <div className="px-2 py-0.5 rounded bg-slate-900/80 border border-slate-700 text-slate-300 text-[10px] font-semibold whitespace-nowrap">
+                      <span>🚪</span>
+                      <span>{el.label || (isEm ? 'EMERGENCY EXIT' : 'EXIT GATE')}</span>
+                    </div>
+                  )}
+                </Html>
               </group>
             );
 

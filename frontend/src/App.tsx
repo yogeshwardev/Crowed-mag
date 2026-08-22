@@ -172,11 +172,7 @@ export const App: React.FC = () => {
         ...telemetry,
         is_emergency: true,
         emergency_scenario: 'stampede',
-        panic_agent_count: Math.round(totalCount * 0.85),
-        stumbling_agent_count: Math.max(3, Math.round(totalCount * 0.03)),
-        peak_crush_pressure_n: 3450.0,
-        max_density: 6.2,
-        danger_zones: [{ x: currentBlueprint.width / 2, y: currentBlueprint.length / 2, radius: 28.0 }],
+        danger_zones: [{ x: currentBlueprint.width / 2, y: currentBlueprint.length / 2, radius: 20.0 }],
         evacuation: {
           is_active: true,
           scenario_type: 'stampede',
